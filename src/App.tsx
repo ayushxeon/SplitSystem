@@ -34,6 +34,7 @@ import type {
   Settlement,
   ModificationNotification,
 } from "./types/types";
+import { TestingBanner } from "./components/TestingBanner";
 
 export default function ExpenseSplitter() {
   const [user, setUser] = useState<User | null>(null);
@@ -484,10 +485,12 @@ const settlements: Settlement[] = Array.isArray(diary.settlements) ? diary.settl
   }
 
   if (!user) {
+     <TestingBanner />
     return <AuthScreen onSignIn={(user) => setUser(user as User)} />;
   }
 
   return (
+    <> <TestingBanner />
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-2 sm:p-4">
       <div className="max-w-6xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6">
@@ -1433,5 +1436,6 @@ const settlements: Settlement[] = Array.isArray(diary.settlements) ? diary.settl
         )}
       </div>
     </div>
+    </>
   );
 }
