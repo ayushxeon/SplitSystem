@@ -1,1 +1,36 @@
 @import "tailwindcss";
+
+/* Just add these mobile optimizations */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Prevent zoom on iOS inputs */
+input[type="number"],
+input[type="text"],
+input[type="email"],
+textarea,
+select {
+  font-size: 16px !important;
+}
+
+/* Touch-friendly */
+button, a, [role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Hide number spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}

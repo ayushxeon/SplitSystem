@@ -1,905 +1,325 @@
-import React, { useState, useEffect } from 'react';
-import { Trash2, Edit2, Plus, Users, DollarSign, TrendingUp, Download, Upload, Save, Lock, Unlock, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import {
+  LogOut,
+  Bell,
+  Plus,
+  Users,
+  UserPlus,
+  Link2,
+  Edit2,
+  Trash2,
+  History,
+  Archive,
+} from "lucide-react";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { auth } from "./firebase/firebase";
+import { cacheService } from "./services/storage";
+import { firebaseService } from "./services/firebaseService";
+import { AuthScreen } from "./components/AuthScreen";
+import { InvitationsPanel } from "./components/InvitationPanel";
+import { AddPersonModal } from "./components/AddPersonModal";
+import { ExpenseForm } from "./components/ExpenseForm";
+import { EventManagement } from "./components/EventManagement";
+import { PeopleManager } from "./components/PeopleManager.component";
+import { ExpenseVersionHistory } from "./components/ExpenseVersionHistory";
+import { ModificationNotifications } from "./components/ModificationNotification.component";
+import { DeletedExpenses } from "./components/DeletedExpenses.component";
+import { InputDialog } from "./components/InputDialog.component";
+import type {
+  User,
+  Diary,
+  Invitation,
+  Expense,
+  Event,
+  Settlement,
+  ModificationNotification,
+} from "./types/types";
 
-// Storage helper
-const STORAGE_KEY = 'expenseSplitterData';
-
-const saveToStorage = (data) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-};
-
-const loadFromStorage = () => {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : null;
-  } catch (e) {
-    console.error('Error loading data:', e);
-    return null;
-  }
-};
-
-// People Management Component
-function PeopleManager({ people, setPeople }) {
-  const [showAddPerson, setShowAddPerson] = useState(false);
-  const [newPersonName, setNewPersonName] = useState('');
-
-  const addPerson = () => {
-    if (newPersonName.trim()) {
-      // Check for duplicate names
-      const existingPerson = Object.values(people).find(
-        p => p.name.toLowerCase() === newPersonName.trim().toLowerCase()
-      );
-      
-      if (existingPerson) {
-        alert('A person with this name already exists!');
-        return;
-      }
-      
-      const id = Date.now();
-      setPeople({
-        ...people,
-        [id]: { id, name: newPersonName.trim() }
-      });
-      setNewPersonName('');
-      setShowAddPerson(false);
-    }
-  };
-
-  const removePerson = (id) => {
-    if (confirm('Remove this person? Their expenses will also be deleted.')) {
-      const newPeople = { ...people };
-      delete newPeople[id];
-      setPeople(newPeople);
-    }
-  };
-
-  const peopleArray = Object.values(people);
-
-  return (
-    <div className="mb-8">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold text-gray-700 flex items-center gap-2">
-          <Users className="text-indigo-600" size={20} />
-          People in this Diary
-        </h2>
-        <button
-          onClick={() => setShowAddPerson(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition flex items-center gap-2"
-        >
-          <Plus size={18} />
-          Add Person
-        </button>
-      </div>
-
-      {showAddPerson && (
-        <div className="bg-indigo-50 p-4 rounded-lg mb-4">
-          <input
-            type="text"
-            value={newPersonName}
-            onChange={(e) => setNewPersonName(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && addPerson()}
-            placeholder="Enter name"
-            className="w-full px-4 py-2 border border-indigo-200 rounded-lg mb-2"
-          />
-          <div className="flex gap-2">
-            <button onClick={addPerson} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition">
-              Add
-            </button>
-            <button onClick={() => setShowAddPerson(false)} className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition">
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {peopleArray.map(person => (
-          <div key={person.id} className="bg-gray-50 p-3 rounded-lg flex items-center justify-between">
-            <span className="font-medium text-gray-700">{person.name}</span>
-            <button onClick={() => removePerson(person.id)} className="text-red-500 hover:text-red-700">
-              <Trash2 size={16} />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {peopleArray.length === 0 && (
-        <p className="text-gray-500 text-center py-4">Add people to start splitting expenses</p>
-      )}
-    </div>
-  );
-}
-
-// Split Bar Component
-function SplitBar({ participants, splits, frozenSplits, people, onDividerDrag }) {
-  let cumulative = 0;
-  
-  return (
-    <div id="split-bar-container" className="relative h-20 bg-gray-200 rounded-lg overflow-hidden mb-4 shadow-inner select-none">
-      {participants.map((personId, index) => {
-        // Ensure personId is treated as number for lookup
-        const numericId = typeof personId === 'string' ? parseInt(personId) : personId;
-        const person = people[numericId];
-        const percentage = parseInt(splits[personId] || 0);
-        const isFrozen = frozenSplits.includes(personId);
-        const startPos = cumulative;
-        cumulative += percentage;
-        
-        if (!person) {
-          console.warn('Person not found for ID:', personId, 'Available people:', Object.keys(people));
-        }
-        
-        return (
-          <React.Fragment key={personId}>
-            <div
-              className="absolute top-0 h-full flex flex-col items-center justify-center text-white font-semibold text-sm px-2 overflow-hidden transition-all"
-              style={{
-                left: `${startPos}%`,
-                width: `${percentage}%`,
-                backgroundColor: `hsl(${(index * 360) / participants.length}, 70%, 55%)`,
-                borderRight: index < participants.length - 1 ? '2px solid white' : 'none'
-              }}
-            >
-              <div className="truncate text-xs">{person?.name || `ID:${personId}`}</div>
-              <div className="font-bold">{percentage}%</div>
-              {isFrozen && <Lock size={12} className="mt-1" />}
-            </div>
-            
-            {index < participants.length - 1 && (
-              <div
-                className="absolute top-0 h-full w-2 bg-white shadow-lg cursor-ew-resize hover:w-3 hover:bg-indigo-300 transition-all z-10"
-                style={{ left: `calc(${cumulative}% - 1px)` }}
-                onMouseDown={(e) => onDividerDrag(index, e)}
-                title="Drag to adjust split"
-              />
-            )}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-}
-
-// Expense Form Component
-function ExpenseForm({ 
-  expenseForm, 
-  setExpenseForm, 
-  people,
-  events,
-  editingExpense,
-  onSubmit,
-  onCancel
-}) {
-  const peopleArray = Object.values(people);
-
-  const toggleParticipant = (personId) => {
-    const currentParticipants = expenseForm.participants;
-    let newParticipants;
-    
-    // Ensure we're working with numeric IDs
-    const numericId = typeof personId === 'string' ? parseInt(personId) : personId;
-    
-    if (currentParticipants.includes(numericId)) {
-      newParticipants = currentParticipants.filter(id => id !== numericId);
-    } else {
-      newParticipants = [...currentParticipants, numericId];
-    }
-
-    const splits = {};
-    if (newParticipants.length > 0) {
-      const equalSplit = Math.floor(100 / newParticipants.length);
-      const remainder = 100 - (equalSplit * newParticipants.length);
-      newParticipants.forEach((id, idx) => {
-        splits[id] = idx === 0 ? equalSplit + remainder : equalSplit;
-      });
-    }
-
-    setExpenseForm({
-      ...expenseForm,
-      participants: newParticipants,
-      splits,
-      frozenSplits: []
-    });
-  };
-
-  const handleDividerDrag = (dividerIndex, event) => {
-    event.preventDefault();
-    const container = document.getElementById('split-bar-container');
-    if (!container) return;
-    
-    const rect = container.getBoundingClientRect();
-    const frozenSplits = expenseForm.frozenSplits || [];
-    const participants = expenseForm.participants;
-    
-    const leftParticipants = participants.slice(0, dividerIndex + 1);
-    const rightParticipants = participants.slice(dividerIndex + 1);
-    
-    const leftUnfrozen = leftParticipants.filter(id => !frozenSplits.includes(id));
-    const rightUnfrozen = rightParticipants.filter(id => !frozenSplits.includes(id));
-    
-    const totalFrozen = participants
-      .filter(id => frozenSplits.includes(id))
-      .reduce((sum, id) => sum + parseInt(expenseForm.splits[id] || 0), 0);
-    
-    const availablePercentage = 100 - totalFrozen;
-    
-    const updateDivider = (e) => {
-      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-      const mousePercentage = Math.round((x / rect.width) * 100);
-      
-      const leftFrozen = leftParticipants
-        .filter(id => frozenSplits.includes(id))
-        .reduce((sum, id) => sum + parseInt(expenseForm.splits[id] || 0), 0);
-      
-      const rightFrozen = rightParticipants
-        .filter(id => frozenSplits.includes(id))
-        .reduce((sum, id) => sum + parseInt(expenseForm.splits[id] || 0), 0);
-      
-      let leftAvailable = Math.max(0, mousePercentage - leftFrozen);
-      let rightAvailable = Math.max(0, 100 - mousePercentage - rightFrozen);
-      
-      const totalAvailable = leftAvailable + rightAvailable;
-      if (totalAvailable > availablePercentage) {
-        return;
-      }
-      
-      const newSplits = { ...expenseForm.splits };
-      
-      if (leftUnfrozen.length > 0) {
-        const perPerson = Math.floor(leftAvailable / leftUnfrozen.length);
-        const remainder = leftAvailable - (perPerson * leftUnfrozen.length);
-        leftUnfrozen.forEach((id, idx) => {
-          newSplits[id] = idx === 0 ? perPerson + remainder : perPerson;
-        });
-      }
-      
-      if (rightUnfrozen.length > 0) {
-        const perPerson = Math.floor(rightAvailable / rightUnfrozen.length);
-        const remainder = rightAvailable - (perPerson * rightUnfrozen.length);
-        rightUnfrozen.forEach((id, idx) => {
-          newSplits[id] = idx === 0 ? perPerson + remainder : perPerson;
-        });
-      }
-      
-      const total = participants.reduce((sum, id) => sum + parseInt(newSplits[id] || 0), 0);
-      if (total === 100) {
-        setExpenseForm({ ...expenseForm, splits: newSplits });
-      }
-    };
-
-    const stopDrag = () => {
-      document.removeEventListener('mousemove', updateDivider);
-      document.removeEventListener('mouseup', stopDrag);
-    };
-
-    document.addEventListener('mousemove', updateDivider);
-    document.addEventListener('mouseup', stopDrag);
-  };
-
-  const toggleFreeze = (personId) => {
-    const frozen = expenseForm.frozenSplits || [];
-    const newFrozen = frozen.includes(personId)
-      ? frozen.filter(id => id !== personId)
-      : [...frozen, personId];
-    
-    setExpenseForm({ ...expenseForm, frozenSplits: newFrozen });
-  };
-
-  const handleSplitChange = (personId, value) => {
-    const newValue = parseInt(value) || 0;
-    const frozenSplits = expenseForm.frozenSplits || [];
-    
-    if (frozenSplits.includes(personId)) {
-      return;
-    }
-    
-    const newSplits = { ...expenseForm.splits };
-    newSplits[personId] = newValue;
-    
-    const frozenTotal = expenseForm.participants
-      .filter(id => frozenSplits.includes(id) || id === personId)
-      .reduce((sum, id) => sum + parseInt(newSplits[id] || 0), 0);
-    
-    const remaining = 100 - frozenTotal;
-    const unfrozenOthers = expenseForm.participants.filter(
-      id => !frozenSplits.includes(id) && id !== personId
-    );
-    
-    if (unfrozenOthers.length > 0 && remaining >= 0) {
-      const perPerson = Math.floor(remaining / unfrozenOthers.length);
-      const remainder = remaining - (perPerson * unfrozenOthers.length);
-      unfrozenOthers.forEach((id, idx) => {
-        newSplits[id] = idx === 0 ? perPerson + remainder : perPerson;
-      });
-    }
-    
-    setExpenseForm({ ...expenseForm, splits: newSplits });
-  };
-
-  const getTotalSplitPercentage = () => {
-    return expenseForm.participants.reduce((sum, id) => 
-      sum + parseInt(expenseForm.splits[id] || 0), 0);
-  };
-
-  return (
-    <div className="bg-green-50 p-4 rounded-lg mb-4">
-      <input
-        type="text"
-        value={expenseForm.description}
-        onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
-        placeholder="Description (e.g., Dinner, Groceries)"
-        className="w-full px-4 py-2 border border-green-200 rounded-lg mb-3"
-      />
-      
-      <input
-        type="number"
-        value={expenseForm.amount}
-        onChange={(e) => {
-          const value = e.target.value;
-          if (value === '' || (parseFloat(value) >= 0)) {
-            setExpenseForm({ ...expenseForm, amount: value });
-          }
-        }}
-        onKeyDown={(e) => {
-          if (e.key === '-' || e.key === 'e' || e.key === 'E') {
-            e.preventDefault();
-          }
-        }}
-        placeholder="Amount (₹)"
-        step="0.01"
-        min="0"
-        className="w-full px-4 py-2 border border-green-200 rounded-lg mb-3"
-      />
-
-      <select
-        value={expenseForm.paidBy}
-        onChange={(e) => setExpenseForm({ ...expenseForm, paidBy: e.target.value })}
-        className="w-full px-4 py-2 border border-green-200 rounded-lg mb-3"
-      >
-        <option value="">Who paid?</option>
-        {peopleArray.map(p => (
-          <option key={p.id} value={p.id}>{p.name}</option>
-        ))}
-      </select>
-
-      <select
-        value={expenseForm.eventId}
-        onChange={(e) => setExpenseForm({ ...expenseForm, eventId: e.target.value })}
-        className="w-full px-4 py-2 border border-green-200 rounded-lg mb-3 font-medium"
-      >
-        <option value="">Select Event</option>
-        {events.map(event => (
-          <option key={event.id} value={event.id}>{event.name}</option>
-        ))}
-      </select>
-
-      <div className="mb-3">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Who's participating?</label>
-        <div className="flex flex-wrap gap-2">
-          {peopleArray.map(person => (
-            <button
-              key={person.id}
-              onClick={() => toggleParticipant(person.id)}
-              className={`px-3 py-1 rounded-full text-sm transition ${
-                expenseForm.participants.includes(person.id)
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-200 text-gray-600'
-              }`}
-            >
-              {person.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mb-3">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Split Mode</label>
-        <div className="flex gap-2">
-          <button
-            onClick={() => {
-              const equalSplit = Math.floor(100 / expenseForm.participants.length);
-              const remainder = 100 - (equalSplit * expenseForm.participants.length);
-              const splits = {};
-              expenseForm.participants.forEach((id, idx) => {
-                splits[id] = idx === 0 ? equalSplit + remainder : equalSplit;
-              });
-              setExpenseForm({ ...expenseForm, splitMode: 'equal', splits, frozenSplits: [] });
-            }}
-            className={`px-4 py-2 rounded-lg transition ${expenseForm.splitMode === 'equal' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-          >
-            Equal Split
-          </button>
-          <button
-            onClick={() => setExpenseForm({ ...expenseForm, splitMode: 'custom' })}
-            className={`px-4 py-2 rounded-lg transition ${expenseForm.splitMode === 'custom' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-          >
-            Custom %
-          </button>
-        </div>
-      </div>
-
-      {expenseForm.splitMode === 'custom' && expenseForm.participants.length > 0 && (
-        <div className="mb-3">
-          <label className="block text-sm font-medium text-gray-700 mb-3">
-            Drag dividers to adjust • Lock values to keep them fixed • Total must be 100%
-          </label>
-          
-          <SplitBar 
-            participants={expenseForm.participants}
-            splits={expenseForm.splits}
-            frozenSplits={expenseForm.frozenSplits || []}
-            people={people}
-            onDividerDrag={handleDividerDrag}
-          />
-
-          <div className="space-y-2">
-            {expenseForm.participants.map((personId, index) => {
-              const person = people[personId];
-              const percentage = parseInt(expenseForm.splits[personId] || 0);
-              const isFrozen = (expenseForm.frozenSplits || []).includes(personId);
-              
-              return (
-                <div key={personId} className="flex items-center gap-2">
-                  <div 
-                    className="w-4 h-4 rounded flex-shrink-0"
-                    style={{ backgroundColor: `hsl(${(index * 360) / expenseForm.participants.length}, 70%, 55%)` }}
-                  />
-                  <span className="w-28 text-sm font-medium text-gray-700">{person?.name || 'Unknown'}</span>
-                  <input
-                    type="number"
-                    value={expenseForm.splits[personId] || ''}
-                    onChange={(e) => handleSplitChange(personId, e.target.value)}
-                    disabled={isFrozen}
-                    step="1"
-                    min="0"
-                    max="100"
-                    className={`w-20 px-2 py-1 border rounded text-sm text-right ${isFrozen ? 'bg-gray-100 cursor-not-allowed' : 'border-gray-300'}`}
-                  />
-                  <span className="text-sm text-gray-600">%</span>
-                  <button
-                    onClick={() => toggleFreeze(personId)}
-                    className={`p-1 rounded transition ${isFrozen ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-400 hover:text-gray-600'}`}
-                    title={isFrozen ? 'Unlock to allow changes' : 'Lock to prevent changes'}
-                  >
-                    {isFrozen ? <Lock size={16} /> : <Unlock size={16} />}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          
-          <div className="text-sm font-medium text-right mt-3 p-2 rounded" style={{
-            backgroundColor: getTotalSplitPercentage() === 100 ? '#dcfce7' : '#fee2e2',
-            color: getTotalSplitPercentage() === 100 ? '#166534' : '#991b1b'
-          }}>
-            {getTotalSplitPercentage() === 100 ? '✓ Ready to add' : `Total: ${getTotalSplitPercentage()}% (must be 100%)`}
-          </div>
-        </div>
-      )}
-
-      <div className="flex gap-2">
-        <button onClick={onSubmit} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">
-          {editingExpense ? 'Update' : 'Add'} Expense
-        </button>
-        <button onClick={onCancel} className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition">
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Settlements Component
-function Settlements({ settlements, people, onSettle, settledTransactions = [] }) {
-  const getPersonName = (id) => {
-    return people[id]?.name || 'Unknown';
-  };
-
-  if (settlements.length === 0 && settledTransactions.length === 0) {
-    return <p className="text-green-600 font-medium text-center py-4">✓ All settled up!</p>;
-  }
-
-  return (
-    <div>
-      {settlements.length > 0 && (
-        <div className="space-y-3 mb-6">
-          <h3 className="text-sm font-semibold text-gray-600 uppercase">Pending</h3>
-          {settlements.map((settlement, idx) => (
-            <div key={idx} className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg border-l-4 border-purple-500">
-              <div className="flex items-center justify-between">
-                <p className="text-gray-800">
-                  <span className="font-semibold">{getPersonName(settlement.from)}</span> owes{' '}
-                  <span className="font-semibold">{getPersonName(settlement.to)}</span>{' '}
-                  <span className="font-bold text-purple-600">₹{settlement.amount.toFixed(2)}</span>
-                </p>
-                <button
-                  onClick={() => onSettle(settlement)}
-                  className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm flex items-center gap-1 transition"
-                  title="Mark as settled"
-                >
-                  <CheckCircle size={16} />
-                  Settle
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {settledTransactions.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-600 uppercase">Settled Transactions</h3>
-          {settledTransactions.map((transaction) => (
-            <div key={transaction.id} className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-l-4 border-green-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-800">
-                    <span className="font-semibold">{getPersonName(transaction.from)}</span> paid{' '}
-                    <span className="font-semibold">{getPersonName(transaction.to)}</span>{' '}
-                    <span className="font-bold text-green-600">₹{transaction.amount.toFixed(2)}</span>
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {new Date(transaction.date).toLocaleString()}
-                  </p>
-                </div>
-                <CheckCircle size={20} className="text-green-600" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Main Component
 export default function ExpenseSplitter() {
-  const [diaries, setDiaries] = useState({});
-  const [currentDiaryId, setCurrentDiaryId] = useState(null);
-  const [showAddDiary, setShowAddDiary] = useState(false);
-  const [newDiaryName, setNewDiaryName] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [diaries, setDiaries] = useState<Diary[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [modifications, setModifications] = useState<
+    ModificationNotification[]
+  >([]);
+  const [showInvitations, setShowInvitations] = useState(false);
+  const [showModifications, setShowModifications] = useState(false);
+  const [showAddPerson, setShowAddPerson] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
-  const [editingExpense, setEditingExpense] = useState(null);
-  const [dataLoaded, setDataLoaded] = useState(false);
-  
-  const [expenseForm, setExpenseForm] = useState({
-    description: '',
-    amount: '',
-    paidBy: '',
-    eventId: 'general',
-    splitMode: 'equal',
-    splits: {},
-    participants: [],
-    frozenSplits: []
-  });
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [currentDiaryId, setCurrentDiaryId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [showPeopleManager, setShowPeopleManager] = useState(false);
+  const [showExpenseVersions, setShowExpenseVersions] = useState<string | null>(
+    null
+  );
+  const [showDeletedExpenses, setShowDeletedExpenses] = useState(false);
+  const [inputDialog, setInputDialog] = useState<{
+    show: boolean;
+    title: string;
+    label: string;
+    placeholder: string;
+    type?: "text" | "number";
+    maxValue?: number;
+    onConfirm: (value: string) => void;
+  } | null>(null);
 
-  // Get current diary data
-  const getCurrentDiary = () => {
-    if (!currentDiaryId || !diaries[currentDiaryId]) return null;
-    return diaries[currentDiaryId];
+  const displayName = (
+    personId: string,
+    diary: Diary,
+    fallback: string = "Unknown"
+  ) => {
+    const person = diary.people[personId];
+    if (!person) return fallback;
+    if (person.userId === user?.uid) return "You";
+    return person.name;
   };
 
-  const people = getCurrentDiary()?.people || {};
-  const expenses = getCurrentDiary()?.expenses || [];
-  const settlements = getCurrentDiary()?.settlements || [];
-  const events = getCurrentDiary()?.events || [{ id: 'general', name: 'General Expenses', order: 0 }];
-
-  // Load data on mount
   useEffect(() => {
-    const savedData = loadFromStorage();
-    if (savedData) {
-      if (savedData.diaries) {
-        // Ensure all diaries have events array with General Expenses
-        const updatedDiaries = {};
-        Object.entries(savedData.diaries).forEach(([id, diary]) => {
-          updatedDiaries[id] = {
-            ...diary,
-            events: diary.events || [{ id: 'general', name: 'General Expenses', order: 0 }]
-          };
-        });
-        setDiaries(updatedDiaries);
-        const diaryIds = Object.keys(updatedDiaries);
-        if (diaryIds.length > 0 && !savedData.currentDiaryId) {
-          setCurrentDiaryId(parseInt(diaryIds[0]));
-        } else if (savedData.currentDiaryId) {
-          setCurrentDiaryId(savedData.currentDiaryId);
+    let unsubInvites: (() => void) | undefined;
+    let unsubModifications: (() => void) | undefined;
+    let unsubDiaries: (() => void) | undefined;
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          await firebaseService.registerUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email?.toLowerCase() || "",
+            displayName: firebaseUser.displayName || "Unknown User",
+            photoURL: firebaseUser.photoURL || undefined,
+          });
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email!,
+            displayName: firebaseUser.displayName!,
+            photoURL: firebaseUser.photoURL,
+          } as User);
+
+          setDiaries(cacheService.getDiaries());
+          setInvitations(cacheService.getInvitations());
+
+          const lastSync = cacheService.getLastSyncTime();
+          const now = Date.now();
+          const SYNC_INTERVAL = 5 * 60 * 1000;
+
+          if (now - lastSync > SYNC_INTERVAL) {
+            setSyncing(true);
+            const syncedDiaries = await firebaseService.syncDiaries(
+              firebaseUser.uid
+            );
+            const syncedInvitations = await firebaseService.loadInvitations(
+              firebaseUser.email!
+            );
+            setDiaries(syncedDiaries);
+            setInvitations(syncedInvitations);
+            setSyncing(false);
+          }
+
+          unsubDiaries = firebaseService.subscribeToUserDiaries(
+            firebaseUser.uid,
+            (updatedDiaries) => {
+              setDiaries(updatedDiaries);
+              cacheService.setDiaries(updatedDiaries);
+            }
+          );
+
+          unsubInvites = firebaseService.subscribeToInvitations(
+            firebaseUser.email!,
+            (newInvitations) => {
+              setInvitations(newInvitations);
+              cacheService.setInvitations(newInvitations);
+            }
+          );
+
+          unsubModifications = firebaseService.subscribeToModifications(
+            firebaseUser.uid,
+            (notifications) => {
+              setModifications(notifications);
+            }
+          );
+        } catch (error) {
+          console.error("Error loading user:", error);
         }
+      } else {
+        setUser(null);
+        cacheService.clearAll();
       }
-    }
-    setDataLoaded(true);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+      if (unsubInvites) unsubInvites();
+      if (unsubModifications) unsubModifications();
+      if (unsubDiaries) unsubDiaries();
+    };
   }, []);
 
-  // Save data whenever it changes - but only after initial load
-  useEffect(() => {
-    if (dataLoaded) {
-      saveToStorage({ diaries, currentDiaryId });
-    }
-  }, [diaries, currentDiaryId, dataLoaded]);
-
-  const addDiary = () => {
-    if (newDiaryName.trim()) {
-      // Check for duplicate diary names
-      const existingDiary = Object.values(diaries).find(
-        d => d.name.toLowerCase() === newDiaryName.trim().toLowerCase()
-      );
-      
-      if (existingDiary) {
-        alert('A diary with this name already exists!');
-        return;
-      }
-      
-      const id = Date.now();
-      const newDiary = {
-        id,
-        name: newDiaryName.trim(),
-        people: {},
-        expenses: [],
-        settlements: [],
-        events: [{ id: 'general', name: 'General Expenses', order: 0 }],
-        createdAt: new Date().toISOString()
-      };
-      setDiaries({ ...diaries, [id]: newDiary });
-      setCurrentDiaryId(id);
-      setNewDiaryName('');
-      setShowAddDiary(false);
-    }
+  const handleSignOut = async () => {
+    await signOut(auth);
   };
 
-  const deleteDiary = (id) => {
-    if (confirm('Delete this expense diary? All data in it will be deleted.')) {
-      const newDiaries = { ...diaries };
-      delete newDiaries[id];
-      setDiaries(newDiaries);
-      
-      const remainingIds = Object.keys(newDiaries);
-      if (remainingIds.length > 0) {
-        setCurrentDiaryId(parseInt(remainingIds[0]));
-      } else {
-        setCurrentDiaryId(null);
-      }
-    }
-  };
+  const handleCreateDiary = async () => {
+    const name = prompt("Enter diary name:");
+    if (!name || !user) return;
 
-  const updateDiaryPeople = (newPeople) => {
-    if (!currentDiaryId) return;
-    setDiaries({
-      ...diaries,
-      [currentDiaryId]: {
-        ...diaries[currentDiaryId],
-        people: newPeople
-      }
-    });
-  };
-
-  const updateDiaryExpenses = (newExpenses) => {
-    if (!currentDiaryId) return;
-    setDiaries({
-      ...diaries,
-      [currentDiaryId]: {
-        ...diaries[currentDiaryId],
-        expenses: newExpenses
-      }
-    });
-  };
-
-  const updateDiaryEvents = (newEvents) => {
-    if (!currentDiaryId) return;
-    setDiaries({
-      ...diaries,
-      [currentDiaryId]: {
-        ...diaries[currentDiaryId],
-        events: newEvents
-      }
-    });
-  };
-
-  const addEvent = (eventName) => {
-    if (!eventName.trim()) return;
-    
-    // Check for duplicate event names
-    const existingEvent = events.find(
-      e => e.name.toLowerCase() === eventName.trim().toLowerCase()
-    );
-    
-    if (existingEvent) {
-      alert('An event with this name already exists!');
-      return;
-    }
-    
-    const newEvent = {
-      id: Date.now().toString(),
-      name: eventName.trim(),
-      order: events.length
-    };
-    updateDiaryEvents([...events, newEvent]);
-  };
-
-  const deleteEvent = (eventId) => {
-    if (eventId === 'general') {
-      alert('Cannot delete General Expenses');
-      return;
-    }
-    if (confirm('Delete this event? Expenses in this event will be moved to General Expenses.')) {
-      // Move expenses to general
-      const updatedExpenses = expenses.map(exp => 
-        exp.eventId === eventId ? { ...exp, eventId: 'general' } : exp
-      );
-      updateDiaryExpenses(updatedExpenses);
-      updateDiaryEvents(events.filter(e => e.id !== eventId));
-    }
-  };
-
-  const reorderEvents = (dragIndex, hoverIndex) => {
-    const dragEvent = events[dragIndex];
-    const newEvents = [...events];
-    newEvents.splice(dragIndex, 1);
-    newEvents.splice(hoverIndex, 0, dragEvent);
-    
-    // Update order property
-    const reorderedEvents = newEvents.map((event, index) => ({
-      ...event,
-      order: index
-    }));
-    
-    updateDiaryEvents(reorderedEvents);
-  };
-
-  const updateDiarySettlements = (newSettlements) => {
-    if (!currentDiaryId) return;
-    setDiaries({
-      ...diaries,
-      [currentDiaryId]: {
-        ...diaries[currentDiaryId],
-        settlements: newSettlements
-      }
-    });
-  };
-
-  const initializeExpenseForm = () => {
-    const participantIds = Object.keys(people).map(id => parseInt(id));
-    
-    if (participantIds.length === 0) {
-      alert('Please add people first!');
-      return;
-    }
-    
-    const equalSplit = Math.floor(100 / participantIds.length);
-    const remainder = 100 - (equalSplit * participantIds.length);
-    const splits = {};
-    participantIds.forEach((id, idx) => {
-      splits[id] = idx === 0 ? equalSplit + remainder : equalSplit;
-    });
-    
-    setExpenseForm({
-      description: '',
-      amount: '',
-      paidBy: participantIds[0].toString(),
-      eventId: 'general',
-      splitMode: 'equal',
-      splits,
-      participants: participantIds,
-      frozenSplits: []
-    });
-    setShowAddExpense(true);
-  };
-
-  const addOrUpdateExpense = () => {
-    if (!expenseForm.description || !expenseForm.amount || !expenseForm.paidBy) {
-      alert('Please fill in all required fields');
-      return;
-    }
-
-    if (expenseForm.participants.length === 0) {
-      alert('Please select at least one participant');
-      return;
-    }
-
-    if (expenseForm.splitMode === 'custom') {
-      const total = expenseForm.participants.reduce((sum, id) => 
-        sum + parseInt(expenseForm.splits[id] || 0), 0);
-      
-      if (total !== 100) {
-        alert(`Split percentages must add up to 100%. Current total: ${total}%`);
-        return;
-      }
-    }
-
-    const expense = {
-      id: editingExpense?.id || Date.now(),
-      description: expenseForm.description,
-      amount: parseFloat(expenseForm.amount),
-      paidBy: parseInt(expenseForm.paidBy),
-      eventId: expenseForm.eventId || 'general',
-      splitMode: expenseForm.splitMode,
-      splits: { ...expenseForm.splits },
-      participants: [...expenseForm.participants],
-      frozenSplits: [...(expenseForm.frozenSplits || [])],
-      date: editingExpense?.date || new Date().toISOString()
+    const diaryId = `diary_${Date.now()}`;
+    const newDiary: Diary = {
+      id: diaryId,
+      name: name.trim(),
+      createdBy: user.uid,
+      members: [user.uid],
+      people: {},
+      expenses: [],
+      deletedExpenses: [],
+      settlements: [],
+      events: [{ id: "general", name: "General Expenses", order: 0 }],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    if (editingExpense) {
-      const updatedExpenses = expenses.map(e => e.id === expense.id ? expense : e);
-      updateDiaryExpenses(updatedExpenses);
-      setEditingExpense(null);
-    } else {
-      updateDiaryExpenses([...expenses, expense]);
-    }
-
-    setShowAddExpense(false);
-    setExpenseForm({
-      description: '',
-      amount: '',
-      paidBy: '',
-      eventId: 'general',
-      splitMode: 'equal',
-      splits: {},
-      participants: [],
-      frozenSplits: []
-    });
-  };
-
-  const editExpense = (expense) => {
-    setExpenseForm({
-      description: expense.description,
-      amount: expense.amount.toString(),
-      paidBy: expense.paidBy.toString(),
-      eventId: expense.eventId || 'general',
-      splitMode: expense.splitMode,
-      splits: { ...expense.splits },
-      participants: expense.participants || Object.keys(expense.splits).map(id => parseInt(id)),
-      frozenSplits: expense.frozenSplits || []
-    });
-    setEditingExpense(expense);
-    setShowAddExpense(true);
-  };
-
-  const deleteExpense = (id) => {
-    if (confirm('Delete this expense?')) {
-      updateDiaryExpenses(expenses.filter(e => e.id !== id));
-    }
-  };
-
-  const calculateBalances = () => {
-    const balances = {};
-    Object.keys(people).forEach(id => {
-      balances[parseInt(id)] = 0;
-    });
-
-    expenses.forEach(expense => {
-      balances[expense.paidBy] = (balances[expense.paidBy] || 0) + expense.amount;
-      
-      expense.participants.forEach(personId => {
-        const share = (expense.amount * parseInt(expense.splits[personId] || 0)) / 100;
-        balances[personId] = (balances[personId] || 0) - share;
+    try {
+      await firebaseService.createDiary(newDiary, {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
       });
-    });
-
-    settlements.forEach(settlement => {
-      balances[settlement.from] = (balances[settlement.from] || 0) + settlement.amount;
-      balances[settlement.to] = (balances[settlement.to] || 0) - settlement.amount;
-    });
-
-    return balances;
+      await handleRefreshData();
+      setCurrentDiaryId(diaryId);
+    } catch (error: any) {
+      console.error("Failed to create diary:", error.message);
+    }
   };
 
-  const simplifyDebts = () => {
-    const balances = calculateBalances();
-    const creditors = [];
-    const debtors = [];
+  const handleRefreshData = async () => {
+  if (!user) return;
+  // Subscriptions handle updates automatically
+  setSyncing(true);
+  setTimeout(() => setSyncing(false), 1000);
+};
+
+  const handleLeaveDiary = async () => {
+    if (!currentDiaryId || !user || !currentDiary) return;
+
+    const hasExpenses = currentDiary.expenses.some(
+      (exp) => exp.paidBy === user.uid || exp.participants.includes(user.uid)
+    );
+
+    const hasSettlements = currentDiary.settlements.some(
+      (set) => set.from === user.uid || set.to === user.uid
+    );
+
+    const settlements = calculateSettlements(currentDiary);
+    const hasPendingBalance = settlements.some(
+      (s) => s.from === user.uid || s.to === user.uid
+    );
+
+    if (hasExpenses || hasSettlements || hasPendingBalance) {
+      let message = "You cannot leave this diary because:\n\n";
+      if (hasPendingBalance) {
+        const userSettlements = settlements.filter(
+          (s) => s.from === user.uid || s.to === user.uid
+        );
+        message += "• You have pending settlements:\n";
+        userSettlements.forEach((s) => {
+          if (s.from === user.uid) {
+            message += `  - You owe ${
+              currentDiary.people[s.to]?.name
+            } ₹${s.amount.toFixed(2)}\n`;
+          } else {
+            message += `  - ${
+              currentDiary.people[s.from]?.name
+            } owes you ₹${s.amount.toFixed(2)}\n`;
+          }
+        });
+      }
+      if (hasExpenses) {
+        message += "• You are part of active expenses\n";
+      }
+      if (hasSettlements) {
+        message += "• You have settlement records\n";
+      }
+      message += "\nTo leave:\n";
+      message += "1. Settle all pending amounts\n";
+      message += "2. Have another member remove you from all expenses";
+
+      alert(message);
+      return;
+    }
+
+    if (!confirm("Are you sure you want to leave this diary?")) return;
+
+    try {
+      await firebaseService.leaveDiary(currentDiaryId, user.uid);
+      setCurrentDiaryId(null);
+      alert("You have successfully left the diary");
+    } catch (error: any) {
+      alert(error.message);
+    }
+  };
+
+  const calculateSettlements = (diary: Diary) => {
+    const balances: Record<string, number> = {};
+    Object.keys(diary.people).forEach((id) => {
+      balances[id] = 0;
+    });
+
+    // ✅ Convert to array if it's not already
+    const expenses = Array.isArray(diary.expenses)
+      ? diary.expenses
+      : diary.expenses?.vc || [];
+    const settlements = Array.isArray(diary.settlements)
+      ? diary.settlements
+      : diary.settlements?.vc || [];
+
+    // ✅ Filter out undefined/null values
+    const validExpenses = expenses.filter(
+      (e) => e && e.paidBy && e.participants
+    );
+    const validSettlements = settlements.filter((s) => s && s.from && s.to);
+
+    // Add expense balances
+    validExpenses.forEach((expense) => {
+      balances[expense.paidBy] =
+        (balances[expense.paidBy] || 0) + expense.amount;
+
+      // ✅ Add safety check for participants
+      if (expense.participants && Array.isArray(expense.participants)) {
+        expense.participants.forEach((personId: string) => {
+          const share =
+            (expense.amount *
+              parseInt(expense.splits[personId]?.toString() || "0")) /
+            100;
+          balances[personId] = (balances[personId] || 0) - share;
+        });
+      }
+    });
+
+    // Subtract ALL settlements
+    validSettlements.forEach((settlement) => {
+      balances[settlement.from] =
+        (balances[settlement.from] || 0) + settlement.amount;
+      balances[settlement.to] =
+        (balances[settlement.to] || 0) - settlement.amount;
+    });
+
+    const creditors: Array<{ id: string; amount: number }> = [];
+    const debtors: Array<{ id: string; amount: number }> = [];
 
     Object.entries(balances).forEach(([personId, balance]) => {
-      if (balance > 0.01) {
-        creditors.push({ id: parseInt(personId), amount: balance });
-      } else if (balance < -0.01) {
-        debtors.push({ id: parseInt(personId), amount: -balance });
-      }
+      if (balance > 0.01) creditors.push({ id: personId, amount: balance });
+      else if (balance < -0.01)
+        debtors.push({ id: personId, amount: -balance });
     });
 
     creditors.sort((a, b) => b.amount - a.amount);
     debtors.sort((a, b) => b.amount - a.amount);
 
-    const result = [];
-    let i = 0, j = 0;
+    const result: Array<{ from: string; to: string; amount: number }> = [];
+    let i = 0,
+      j = 0;
 
     while (i < creditors.length && j < debtors.length) {
       const creditor = creditors[i];
@@ -907,11 +327,7 @@ export default function ExpenseSplitter() {
       const amount = Math.min(creditor.amount, debtor.amount);
 
       if (amount > 0.01) {
-        result.push({
-          from: debtor.id,
-          to: creditor.id,
-          amount: amount
-        });
+        result.push({ from: debtor.id, to: creditor.id, amount });
       }
 
       creditor.amount -= amount;
@@ -924,475 +340,1098 @@ export default function ExpenseSplitter() {
     return result;
   };
 
-  const handleSettle = (settlement) => {
-    const newSettlement = {
-      id: Date.now(),
-      from: settlement.from,
-      to: settlement.to,
-      amount: settlement.amount,
-      date: new Date().toISOString()
-    };
-    updateDiarySettlements([...settlements, newSettlement]);
-  };
+  const handleExpenseSubmit = async (expenseData: any) => {
+    if (!currentDiaryId || !user) return;
 
-  const getPersonName = (id) => {
-    return people[id]?.name || 'Unknown';
-  };
-
-  const downloadDiaryAsJSON = () => {
-    if (!currentDiaryId) return;
-    const diary = diaries[currentDiaryId];
-    const data = { diary, exportDate: new Date().toISOString() };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${diary.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const downloadDiaryAsCSV = () => {
-    if (!currentDiaryId) return;
-    const peopleArray = Object.values(people);
-    let csv = 'Date,Description,Amount,Paid By,';
-    csv += peopleArray.map(p => p.name).join(',') + '\n';
-
-    expenses.forEach(expense => {
-      const date = new Date(expense.date).toLocaleDateString();
-      const row = [
-        date,
-        expense.description,
-        expense.amount.toFixed(2),
-        getPersonName(expense.paidBy)
-      ];
-      
-      peopleArray.forEach(person => {
-        if (expense.participants.includes(person.id)) {
-          const share = (expense.amount * parseInt(expense.splits[person.id] || 0)) / 100;
-          row.push(share.toFixed(2));
-        } else {
-          row.push('0.00');
-        }
-      });
-      
-      csv += row.join(',') + '\n';
-    });
-
-    const diary = diaries[currentDiaryId];
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${diary.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const uploadDiaryFiles = (event) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    let successCount = 0;
-    let errorCount = 0;
-    const newDiaries = { ...diaries };
-    let lastImportedId = null;
-
-    const processFile = (file, index) => {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          try {
-            const data = JSON.parse(e.target.result);
-            
-            // Handle both old format (with diary wrapper) and new format (direct diary object)
-            let diaryData = null;
-            
-            if (data.diary) {
-              // New format: { diary: {...} }
-              diaryData = data.diary;
-            } else if (data.name && data.people) {
-              // Old format or direct diary object
-              diaryData = data;
-            }
-            
-            if (diaryData) {
-              const newId = Date.now() + index;
-              
-              // Ensure the diary has all required fields
-              newDiaries[newId] = {
-                id: newId,
-                name: diaryData.name || 'Imported Diary',
-                people: diaryData.people || {},
-                expenses: diaryData.expenses || [],
-                settlements: diaryData.settlements || [],
-                events: diaryData.events || [{ id: 'general', name: 'General Expenses', order: 0 }],
-                createdAt: diaryData.createdAt || new Date().toISOString(),
-                importedAt: new Date().toISOString()
-              };
-              
-              lastImportedId = newId;
-              successCount++;
-            } else {
-              console.error('Invalid diary format:', data);
-              errorCount++;
-            }
-          } catch (error) {
-            console.error('Error parsing file:', error);
-            errorCount++;
-          }
-          resolve();
-        };
-        
-        reader.onerror = () => {
-          errorCount++;
-          resolve();
-        };
-        
-        reader.readAsText(file);
-      });
-    };
-
-    // Process all files
-    const promises = Array.from(files).map((file, index) => processFile(file, index));
-    
-    Promise.all(promises).then(() => {
-      if (successCount > 0) {
-        setDiaries(newDiaries);
-        if (lastImportedId) {
-          setCurrentDiaryId(lastImportedId);
-        }
-        alert(`✓ Successfully imported ${successCount} diary/diaries!${errorCount > 0 ? `\n✗ ${errorCount} file(s) failed.` : ''}`);
+    try {
+      if (editingExpenseId) {
+        await firebaseService.updateExpense(
+          currentDiaryId,
+          editingExpenseId,
+          expenseData,
+          user.uid,
+          user.displayName
+        );
+        setEditingExpenseId(null);
       } else {
-        alert('✗ No valid diary files found. Please check the file format.');
+        const newExpense: Expense = {
+          ...expenseData,
+          id: Date.now().toString(),
+          date: new Date().toISOString(),
+        };
+        await firebaseService.addExpense(currentDiaryId, newExpense);
+        setShowAddExpense(false);
       }
-    });
-
-    event.target.value = '';
+    } catch (error: any) {
+      alert(error.message || "Failed to save expense");
+    }
   };
 
-  const currentSettlements = simplifyDebts();
-  const peopleArray = Object.values(people);
-  const diariesArray = Object.values(diaries);
+  const handleDeleteExpense = async (expenseId: string) => {
+    if (
+      !currentDiaryId ||
+      !user ||
+      !confirm(
+        "Delete this expense? (You can restore it later from Deleted Expenses)"
+      )
+    )
+      return;
+
+    try {
+      await firebaseService.deleteExpense(
+        currentDiaryId,
+        expenseId,
+        user.uid,
+        user.displayName
+      );
+    } catch (error: any) {
+      alert(error.message);
+    }
+  };
+
+  const handleRestoreExpense = async (expense: Expense) => {
+    if (!currentDiaryId) return;
+    try {
+      await firebaseService.restoreExpense(currentDiaryId, expense.id);
+      alert("Expense restored successfully!");
+    } catch (error: any) {
+      alert(error.message);
+    }
+  };
+
+  const handleEditAndRestoreExpense = async (expense: Expense) => {
+    if (!currentDiaryId) return;
+    try {
+      await firebaseService.restoreExpense(currentDiaryId, expense.id);
+      setShowDeletedExpenses(false);
+      setEditingExpenseId(expense.id);
+      setTimeout(() => {
+        const expenseElement = document.getElementById(`expense-${expense.id}`);
+        if (expenseElement) {
+          expenseElement.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        }
+      }, 300);
+    } catch (error: any) {
+      alert(error.message);
+    }
+  };
+
+  const handlePermanentDelete = async (expenseId: string) => {
+    if (!currentDiaryId) return;
+    try {
+      await firebaseService.permanentlyDeleteExpense(currentDiaryId, expenseId);
+      alert("Expense permanently deleted");
+    } catch (error: any) {
+      alert(error.message);
+    }
+  };
+
+  const handleAcknowledgeModification = async (notificationId: string) => {
+    if (!user) return;
+    try {
+      await firebaseService.acknowledgeModification(notificationId, user.uid);
+      setModifications((prev) => prev.filter((n) => n.id !== notificationId));
+    } catch (error) {
+      console.error("Error acknowledging modification:", error);
+    }
+  };
+
+  const handleNavigateToExpense = (diaryId: string, expenseId: string) => {
+    setCurrentDiaryId(diaryId);
+    setTimeout(() => {
+      const expenseElement = document.getElementById(`expense-${expenseId}`);
+      if (expenseElement) {
+        expenseElement.scrollIntoView({ behavior: "smooth", block: "center" });
+        expenseElement.classList.add("ring-4", "ring-blue-400");
+        setTimeout(() => {
+          expenseElement.classList.remove("ring-4", "ring-blue-400");
+        }, 2000);
+      }
+    }, 300);
+  };
+
+  const currentDiary = diaries.find((d) => d.id === currentDiaryId);
+  const pendingInvitations = invitations.filter(
+    (i) => i.status === "pending"
+  ).length;
+
+  const globalTotals = diaries.reduce(
+    (acc, diary) => {
+      if (!diary || !diary.people) return acc;
+
+      const settlements = calculateSettlements(diary);
+      settlements.forEach((s) => {
+        if (diary.people[s.to]?.userId === user?.uid) {
+          acc.toReceive += s.amount;
+        }
+        if (diary.people[s.from]?.userId === user?.uid) {
+          acc.toPay += s.amount;
+        }
+      });
+      return acc;
+    },
+    { toReceive: 0, toPay: 0 }
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen onSignIn={setUser} />;
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-2">
-              <DollarSign className="text-indigo-600" />
-              Expense Splitter
-            </h1>
-            
-            {currentDiaryId && (
-              <div className="flex gap-2">
-                <button
-                  onClick={downloadDiaryAsJSON}
-                  className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm"
-                  title="Download current diary as JSON"
-                >
-                  <Download size={16} />
-                  JSON
-                </button>
-                <button
-                  onClick={downloadDiaryAsCSV}
-                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 text-sm"
-                  title="Download current diary as CSV"
-                >
-                  <Download size={16} />
-                  CSV
-                </button>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-2 sm:p-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-base sm:text-lg flex-shrink-0">
+                {user.displayName?.charAt(0)}
               </div>
-            )}
-          </div>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6 text-sm text-blue-800">
-            <div className="flex items-start gap-2">
-              <Save size={16} className="mt-0.5 flex-shrink-0" />
-              <div>
-                <strong>Auto-saved!</strong> Your data is automatically saved in your browser and persists on refresh.
-              </div>
-            </div>
-          </div>
-
-          {/* Expense Diaries Section */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-700 flex items-center gap-2">
-                📔 Expense Diaries
-              </h2>
-              <div className="flex gap-2">
-                <label className="bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition flex items-center gap-2 text-sm cursor-pointer">
-                  <Upload size={16} />
-                  Import
-                  <input
-                    type="file"
-                    accept=".json"
-                    multiple
-                    onChange={uploadDiaryFiles}
-                    className="hidden"
-                  />
-                </label>
-                <button
-                  onClick={() => setShowAddDiary(true)}
-                  className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
-                >
-                  <Plus size={18} />
-                  New Diary
-                </button>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-800 truncate">
+                  {user.displayName}
+                </h2>
+                <p className="text-xs sm:text-sm text-gray-600 truncate">
+                  {user.email}
+                </p>
               </div>
             </div>
 
-            {showAddDiary && (
-              <div className="bg-orange-50 p-4 rounded-lg mb-4">
-                <input
-                  type="text"
-                  value={newDiaryName}
-                  onChange={(e) => setNewDiaryName(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && addDiary()}
-                  placeholder="Diary name (e.g., Trip to Goa, Office Lunch)"
-                  className="w-full px-4 py-2 border border-orange-200 rounded-lg mb-2"
-                />
-                <div className="flex gap-2">
-                  <button onClick={addDiary} className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition">
-                    Create
-                  </button>
-                  <button onClick={() => setShowAddDiary(false)} className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition">
-                    Cancel
-                  </button>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+              {(globalTotals.toReceive > 0.01 || globalTotals.toPay > 0.01) && (
+                <div className="flex items-center gap-2">
+                  {globalTotals.toReceive > 0.01 && (
+                    <div className="bg-green-100 px-2 sm:px-3 py-1 sm:py-2 rounded-lg">
+                      <p className="text-xs text-green-700 font-medium">
+                        Receive
+                      </p>
+                      <p className="text-sm sm:text-lg font-bold text-green-800">
+                        ₹{globalTotals.toReceive.toFixed(0)}
+                      </p>
+                    </div>
+                  )}
+                  {globalTotals.toPay > 0.01 && (
+                    <div className="bg-red-100 px-2 sm:px-3 py-1 sm:py-2 rounded-lg">
+                      <p className="text-xs text-red-700 font-medium">Pay</p>
+                      <p className="text-sm sm:text-lg font-bold text-red-800">
+                        ₹{globalTotals.toPay.toFixed(0)}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {diariesArray.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {diariesArray.map(diary => (
-                  <div 
-                    key={diary.id} 
-                    className={`p-4 rounded-lg border-2 transition cursor-pointer ${
-                      currentDiaryId === diary.id 
-                        ? 'bg-orange-50 border-orange-500' 
-                        : 'bg-gray-50 border-gray-200 hover:border-orange-300'
-                    }`}
-                    onClick={() => setCurrentDiaryId(diary.id)}
+              <div className="flex items-center gap-2">
+                {modifications.length > 0 && (
+                  <button
+                    onClick={() => setShowModifications(true)}
+                    className="relative p-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 touch-manipulation"
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-800">{diary.name}</h3>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {Object.keys(diary.people || {}).length} people • {diary.expenses?.length || 0} expenses
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          Created {new Date(diary.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteDiary(diary.id);
-                        }} 
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                    <Bell size={18} />
+                    <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                      {modifications.length}
+                    </span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowInvitations(true)}
+                  className="relative p-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 touch-manipulation"
+                >
+                  <Bell size={18} />
+                  {pendingInvitations > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                      {pendingInvitations}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg touch-manipulation"
+                >
+                  <LogOut size={18} className="inline sm:mr-2" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-700">
+              📔 My Diaries
+            </h2>
+            <button
+              onClick={handleCreateDiary}
+              className="bg-orange-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-orange-700 text-sm sm:text-base touch-manipulation"
+            >
+              <Plus size={18} className="inline mr-1 sm:mr-2" />
+              New
+            </button>
+          </div>
+
+          {diaries.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500 mb-4">No diaries yet</p>
+              <button
+                onClick={handleCreateDiary}
+                className="bg-orange-600 text-white px-6 py-3 rounded-lg touch-manipulation"
+              >
+                Create First Diary
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+              {diaries.map((diary) => {
+                const settlements = calculateSettlements(diary);
+                const toReceiveSettlements = settlements.filter(
+                  (s) => diary.people[s.to]?.userId === user.uid
+                );
+                const toPaySettlements = settlements.filter(
+                  (s) => diary.people[s.from]?.userId === user.uid
+                );
+                const totalToReceive = toReceiveSettlements.reduce(
+                  (sum, s) => sum + s.amount,
+                  0
+                );
+                const totalToPay = toPaySettlements.reduce(
+                  (sum, s) => sum + s.amount,
+                  0
+                );
+                const markedPaidSettlements = diary.settlements.filter(
+                  (s) =>
+                    s.status === "marked_paid" &&
+                    diary.people[s.from]?.userId === user.uid
+                );
+                const totalMarkedPaid = markedPaidSettlements.reduce(
+                  (sum, s) => sum + s.amount,
+                  0
+                );
+
+                return (
+                  <div
+                    key={diary.id}
+                    onClick={() => setCurrentDiaryId(diary.id)}
+                    className={`p-3 sm:p-4 rounded-lg border-2 cursor-pointer touch-manipulation ${
+                      currentDiaryId === diary.id
+                        ? "bg-orange-50 border-orange-500"
+                        : "bg-gray-50 border-gray-200"
+                    }`}
+                  >
+                    <h3 className="font-semibold text-gray-800 mb-2 text-sm sm:text-base">
+                      {diary.name}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-gray-600 mb-2">
+                      {Object.keys(diary.people).length} people •{" "}
+                      {diary.expenses.length} expenses
+                    </p>
+
+                    <div className="flex gap-1 sm:gap-2 flex-wrap">
+                      {toReceiveSettlements.length > 0 && (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium whitespace-nowrap">
+                          💰 {toReceiveSettlements.length} (₹
+                          {totalToReceive.toFixed(0)})
+                        </span>
+                      )}
+                      {toPaySettlements.length > 0 && (
+                        <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-medium whitespace-nowrap">
+                          ⚠️ {toPaySettlements.length} (₹{totalToPay.toFixed(0)}
+                          )
+                        </span>
+                      )}
+                      {markedPaidSettlements.length > 0 && (
+                        <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full font-medium whitespace-nowrap">
+                          ⏳ {markedPaidSettlements.length} (₹
+                          {totalMarkedPaid.toFixed(0)})
+                        </span>
+                      )}
+                      {settlements.length === 0 &&
+                        markedPaidSettlements.length === 0 && (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full whitespace-nowrap">
+                            ✓ All settled
+                          </span>
+                        )}
                     </div>
                   </div>
-                ))}
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {currentDiary && (
+          <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-6">
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-800">
+                  {currentDiary.name}
+                </h2>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      currentDiary.inviteLink || ""
+                    );
+                    alert("Link copied!");
+                  }}
+                  className="text-xs sm:text-sm bg-blue-100 text-blue-700 px-2 sm:px-3 py-1 rounded-lg hover:bg-blue-200 touch-manipulation"
+                >
+                  <Link2 size={14} className="inline mr-1" />
+                  Copy Link
+                </button>
+              </div>
+
+              <div className="flex gap-2 w-full sm:w-auto">
+                {currentDiary.deletedExpenses &&
+                  currentDiary.deletedExpenses.length > 0 && (
+                    <button
+                      onClick={() => setShowDeletedExpenses(true)}
+                      className="flex-1 sm:flex-none bg-gray-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center justify-center gap-2 text-sm touch-manipulation"
+                    >
+                      <Archive size={16} />
+                      <span className="hidden sm:inline">
+                        Deleted ({currentDiary.deletedExpenses.length})
+                      </span>
+                      <span className="sm:hidden">
+                        ({currentDiary.deletedExpenses.length})
+                      </span>
+                    </button>
+                  )}
+                <button
+                  onClick={handleLeaveDiary}
+                  className="flex-1 sm:flex-none bg-red-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-red-700 text-sm touch-manipulation"
+                >
+                  Leave
+                </button>
+                <button
+                  onClick={() => setShowPeopleManager(true)}
+                  className="flex-1 sm:flex-none bg-indigo-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm touch-manipulation"
+                >
+                  <Users size={16} className="inline mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">People</span>
+                </button>
+              </div>
+            </div>
+
+            {showPeopleManager && (
+              <PeopleManager
+                diary={currentDiary}
+                currentUserId={user.uid}
+                onClose={() => setShowPeopleManager(false)}
+                onUpdate={handleRefreshData}
+              />
+            )}
+
+            {Object.keys(currentDiary.people).length === 0 ? (
+              <div className="text-center py-8">
+                <button
+                  onClick={() => setShowAddPerson(true)}
+                  className="text-indigo-600 touch-manipulation"
+                >
+                  Add first person
+                </button>
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-4">Create a diary to start tracking expenses</p>
-            )}
-          </div>
-
-          {currentDiaryId && (
-            <>
-              <PeopleManager people={people} setPeople={updateDiaryPeople} />
-
-              {peopleArray.length > 0 && (
-                <div className="mb-8">
-                  {/* Events Management */}
-                  <div className="mb-6 bg-purple-50 p-4 rounded-lg border border-purple-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-                        📅 Events
-                        <span className="text-xs text-gray-500 font-normal">(Drag ⋮⋮ to reorder)</span>
-                      </h3>
-                      <button
-                        onClick={() => {
-                          const eventName = prompt('Enter event name (e.g., Day 1, Breakfast, Sightseeing):');
-                          if (eventName) addEvent(eventName);
-                        }}
-                        className="bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition text-sm flex items-center gap-1"
-                      >
-                        <Plus size={16} />
-                        Add Event
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      {events.map((event, index) => (
-                        <div
-                          key={event.id}
-                          draggable={event.id !== 'general'}
-                          onDragStart={(e) => {
-                            if (event.id !== 'general') {
-                              e.dataTransfer.effectAllowed = 'move';
-                              e.dataTransfer.setData('text/plain', index.toString());
-                            }
-                          }}
-                          onDragOver={(e) => {
-                            if (event.id !== 'general') {
-                              e.preventDefault();
-                              e.dataTransfer.dropEffect = 'move';
-                            }
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
-                            if (dragIndex !== index && event.id !== 'general') {
-                              reorderEvents(dragIndex, index);
-                            }
-                          }}
-                          className={`flex items-center justify-between p-3 rounded-lg border transition ${
-                            event.id === 'general' 
-                              ? 'bg-blue-50 border-blue-300' 
-                              : 'bg-white border-gray-300 cursor-move hover:border-purple-400 hover:shadow-sm'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            {event.id !== 'general' && (
-                              <span className="text-gray-400 text-lg select-none">⋮⋮</span>
-                            )}
-                            <span className="font-medium text-gray-800">{event.name}</span>
-                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                              {expenses.filter(exp => (exp.eventId || 'general') === event.id).length} expenses
-                            </span>
-                          </div>
-                          {event.id !== 'general' && (
-                            <button
-                              onClick={() => deleteEvent(event.id)}
-                              className="text-red-500 hover:text-red-700 p-1"
-                              title="Delete event"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-semibold text-gray-700 flex items-center gap-2">
-                      <TrendingUp className="text-indigo-600" size={20} />
-                      Expenses in "{getCurrentDiary()?.name}"
-                    </h2>
-                    <button
-                      onClick={initializeExpenseForm}
-                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2"
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 mb-6">
+                  {Object.values(currentDiary.people).map((person) => (
+                    <div
+                      key={person.id}
+                      className="bg-gray-50 p-2 sm:p-3 rounded-lg"
                     >
-                      <Plus size={18} />
-                      Add Expense
+                      <p className="font-medium text-sm sm:text-base">
+                        {person.userId === user.uid ? "You" : person.name}
+                      </p>
+                      {person.email && (
+                        <p className="text-xs text-gray-500 truncate">
+                          {person.email}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setShowAddPerson(true)}
+                  className="w-full bg-indigo-600 text-white px-4 py-2 sm:py-3 rounded-lg mb-6 text-sm sm:text-base touch-manipulation"
+                >
+                  <UserPlus size={18} className="inline mr-2" />
+                  Add Person
+                </button>
+
+                <EventManagement
+                  events={currentDiary.events}
+                  expenses={currentDiary.expenses}
+                  onAddEvent={async (name) => {
+                    if (
+                      currentDiary.events.find(
+                        (e) => e.name.toLowerCase() === name.toLowerCase()
+                      )
+                    ) {
+                      alert("Event already exists!");
+                      return;
+                    }
+                    const newEvent: Event = {
+                      id: Date.now().toString(),
+                      name,
+                      order: currentDiary.events.length,
+                    };
+                    await firebaseService.addEvent(currentDiaryId!, newEvent);
+                  }}
+                  onDeleteEvent={async (eventId) => {
+                    if (eventId === "general" || !confirm("Delete this event?"))
+                      return;
+                    await firebaseService.deleteEvent(currentDiaryId!, eventId);
+                  }}
+                  onReorderEvents={async (dragIndex, hoverIndex) => {
+                    const newEvents = [...currentDiary.events];
+                    const dragEvent = newEvents[dragIndex];
+                    newEvents.splice(dragIndex, 1);
+                    newEvents.splice(hoverIndex, 0, dragEvent);
+                    await firebaseService.reorderEvents(
+                      currentDiaryId!,
+                      newEvents.map((e, i) => ({ ...e, order: i }))
+                    );
+                  }}
+                />
+
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg sm:text-xl font-semibold">
+                      Expenses
+                    </h3>
+                    <button
+                      onClick={() => setShowAddExpense(true)}
+                      className="bg-green-600 text-white px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base touch-manipulation"
+                    >
+                      <Plus size={18} className="inline mr-1 sm:mr-2" />
+                      Add
                     </button>
                   </div>
 
                   {showAddExpense && (
                     <ExpenseForm
-                      expenseForm={expenseForm}
-                      setExpenseForm={setExpenseForm}
-                      people={people}
-                      events={events}
-                      editingExpense={editingExpense}
-                      onSubmit={addOrUpdateExpense}
-                      onCancel={() => {
-                        setShowAddExpense(false);
-                        setEditingExpense(null);
-                      }}
+                      people={currentDiary.people}
+                      events={currentDiary.events}
+                      currentUser={user}
+                      editingExpense={null}
+                      onSubmit={handleExpenseSubmit}
+                      onCancel={() => setShowAddExpense(false)}
                     />
                   )}
 
-                  {/* Expenses grouped by event */}
-                  <div className="space-y-6">
-                    {events.map(event => {
-                      const eventExpenses = expenses.filter(exp => (exp.eventId || 'general') === event.id);
-                      if (eventExpenses.length === 0) return null;
-                      
-                      return (
-                        <div key={event.id} className="border-l-4 border-purple-400 pl-4">
-                          <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                            {event.name}
-                            <span className="text-xs text-gray-500">({eventExpenses.length} expenses)</span>
-                          </h3>
-                          <div className="space-y-3">
-                            {eventExpenses.map(expense => (
-                              <div key={expense.id} className="bg-gray-50 p-4 rounded-lg">
-                                <div className="flex items-start justify-between mb-2">
-                                  <div className="flex-1">
-                                    <h3 className="font-semibold text-gray-800">{expense.description}</h3>
-                                    <p className="text-sm text-gray-600">
-                                      ₹{expense.amount.toFixed(2)} paid by {getPersonName(expense.paidBy)}
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-1">
-                                      Split among: {expense.participants.map(id => getPersonName(id)).join(', ')}
-                                    </p>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <button onClick={() => editExpense(expense)} className="text-blue-500 hover:text-blue-700">
-                                      <Edit2 size={18} />
-                                    </button>
-                                    <button onClick={() => deleteExpense(expense.id)} className="text-red-500 hover:text-red-700">
-                                      <Trash2 size={18} />
-                                    </button>
-                                  </div>
-                                </div>
-                                <div className="text-xs text-gray-500 space-y-1">
-                                  {expense.participants.map(personId => (
-                                    <div key={personId}>
-                                      {getPersonName(personId)}: {expense.splits[personId]}% (₹{((expense.amount * parseInt(expense.splits[personId] || 0)) / 100).toFixed(2)})
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  {currentDiary.expenses.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">
+                      No expenses yet
+                    </p>
+                  ) : (
+                    <div className="space-y-6">
+                      {currentDiary.events.map((event) => {
+                        const eventExpenses = currentDiary.expenses.filter(
+                          (exp) => (exp.eventId || "general") === event.id
+                        );
+                        if (eventExpenses.length === 0) return null;
 
-                  {expenses.length === 0 && (
-                    <p className="text-gray-500 text-center py-4">No expenses added yet</p>
+                        return (
+                          <div
+                            key={event.id}
+                            className="border-l-4 border-purple-400 pl-3 sm:pl-4"
+                          >
+                            <h4 className="font-semibold text-gray-700 mb-3 text-sm sm:text-base">
+                              {event.name} ({eventExpenses.length})
+                            </h4>
+                            <div className="space-y-3">
+                              {eventExpenses.map((expense) => {
+                                const userShare = expense.participants.includes(
+                                  user.uid
+                                )
+                                  ? (expense.amount *
+                                      parseInt(
+                                        expense.splits[user.uid]?.toString() ||
+                                          "0"
+                                      )) /
+                                    100
+                                  : 0;
+                                const userPaid = expense.paidBy === user.uid;
+                                const userBalance = userPaid
+                                  ? expense.amount - userShare
+                                  : -userShare;
+
+                                return (
+                                  <div key={expense.id}>
+                                    {editingExpenseId === expense.id ? (
+                                      <ExpenseForm
+                                        people={currentDiary.people}
+                                        events={currentDiary.events}
+                                        currentUser={user}
+                                        editingExpense={expense}
+                                        onSubmit={handleExpenseSubmit}
+                                        onCancel={() =>
+                                          setEditingExpenseId(null)
+                                        }
+                                      />
+                                    ) : (
+                                      <div
+                                        id={`expense-${expense.id}`}
+                                        className="p-3 sm:p-4 rounded-lg border-2 bg-white border-gray-200 hover:shadow-md transition"
+                                      >
+                                        <div className="flex justify-between gap-2 mb-2">
+                                          <div className="flex-1 min-w-0">
+                                            <h3 className="font-semibold text-sm sm:text-base">
+                                              {expense.description}
+                                            </h3>
+                                            <p className="text-xs sm:text-sm text-gray-600">
+                                              ₹{expense.amount.toFixed(2)} paid
+                                              by{" "}
+                                              {displayName(
+                                                expense.paidBy,
+                                                currentDiary
+                                              )}
+                                            </p>
+
+                                            {expense.participants.includes(
+                                              user.uid
+                                            ) && (
+                                              <div className="mt-2 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                                                <p className="text-xs sm:text-sm font-medium text-blue-900">
+                                                  Your share: ₹
+                                                  {userShare.toFixed(2)}
+                                                  {userPaid && (
+                                                    <span className="ml-1 sm:ml-2 text-green-700 block sm:inline">
+                                                      • You paid ₹
+                                                      {expense.amount.toFixed(
+                                                        2
+                                                      )}
+                                                      • You'll receive ₹
+                                                      {userBalance.toFixed(2)}
+                                                    </span>
+                                                  )}
+                                                  {!userPaid &&
+                                                    userBalance < 0 && (
+                                                      <span className="ml-1 sm:ml-2 text-red-700 block sm:inline">
+                                                        • You owe ₹
+                                                        {Math.abs(
+                                                          userBalance
+                                                        ).toFixed(2)}
+                                                      </span>
+                                                    )}
+                                                </p>
+                                              </div>
+                                            )}
+
+                                            <div className="text-xs text-gray-500 mt-1">
+                                              Split:{" "}
+                                              {expense.participants
+                                                .map(
+                                                  (p) =>
+                                                    `${displayName(
+                                                      p,
+                                                      currentDiary
+                                                    )} (${expense.splits[p]}%)`
+                                                )
+                                                .join(", ")}
+                                            </div>
+                                            {expense.lastModifiedBy && (
+                                              <div className="text-xs text-orange-600 mt-1">
+                                                Modified by{" "}
+                                                {expense.lastModifiedByName || // First try stored name (new approach)
+                                                  (() => {
+                                                    // Fallback: Find person by userId
+                                                    const person =
+                                                      Object.values(
+                                                        currentDiary.people
+                                                      ).find(
+                                                        (p) =>
+                                                          p.userId ===
+                                                          expense.lastModifiedBy
+                                                      );
+                                                    if (person) {
+                                                      return person.userId ===
+                                                        user.uid
+                                                        ? "You"
+                                                        : person.name;
+                                                    }
+                                                    return "Unknown";
+                                                  })()}
+                                                {expense.lastModifiedAt &&
+                                                  ` on ${new Date(
+                                                    expense.lastModifiedAt
+                                                  ).toLocaleDateString()}`}
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-end sm:items-start">
+                                            {expense.versions &&
+                                              expense.versions.length > 0 && (
+                                                <button
+                                                  onClick={() =>
+                                                    setShowExpenseVersions(
+                                                      expense.id
+                                                    )
+                                                  }
+                                                  className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 whitespace-nowrap touch-manipulation"
+                                                  title="View version history"
+                                                >
+                                                  <History
+                                                    size={12}
+                                                    className="inline mr-1"
+                                                  />
+                                                  v{expense.currentVersion}
+                                                </button>
+                                              )}
+
+                                            <button
+                                              onClick={() =>
+                                                setEditingExpenseId(expense.id)
+                                              }
+                                              className="p-2 text-blue-500 hover:text-blue-700 touch-manipulation"
+                                              title="Edit expense"
+                                            >
+                                              <Edit2 size={16} />
+                                            </button>
+
+                                            <button
+                                              onClick={() =>
+                                                handleDeleteExpense(expense.id)
+                                              }
+                                              className="p-2 text-red-500 hover:text-red-700 touch-manipulation"
+                                              title="Delete expense"
+                                            >
+                                              <Trash2 size={16} />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-              )}
 
-              {expenses.length > 0 && (
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-700 mb-4">💰 Who Owes Whom</h2>
-                  <Settlements 
-                    settlements={currentSettlements} 
-                    people={people}
-                    onSettle={handleSettle}
-                    settledTransactions={settlements}
-                  />
-                </div>
-              )}
-            </>
-          )}
+                {showExpenseVersions &&
+                  currentDiary.expenses.find(
+                    (e) => e.id === showExpenseVersions
+                  ) && (
+                    <ExpenseVersionHistory
+                      expense={
+                        currentDiary.expenses.find(
+                          (e) => e.id === showExpenseVersions
+                        )!
+                      }
+                      people={currentDiary.people}
+                      onClose={() => setShowExpenseVersions(null)}
+                    />
+                  )}
 
-          {!currentDiaryId && diariesArray.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-gray-500 mb-4">Welcome! Create your first expense diary to get started.</p>
-              <button
-                onClick={() => setShowAddDiary(true)}
-                className="bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 transition inline-flex items-center gap-2"
-              >
-                <Plus size={20} />
-                Create First Diary
-              </button>
-            </div>
-          )}
-        </div>
+                {currentDiary.expenses.length > 0 && (
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-semibold mb-4">
+                      💰 Settlements
+                    </h3>
+
+                    {calculateSettlements(currentDiary).length === 0 &&
+                    currentDiary.settlements.filter(
+                      (s) => s.status === "marked_paid"
+                    ).length === 0 ? (
+                      <div className="text-center py-8 bg-green-50 rounded-lg">
+                        <p className="text-green-700 font-semibold">
+                          ✓ All Settled!
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {Object.entries(
+                          currentDiary.settlements
+                            .filter((s) => s.status === "marked_paid")
+                            .reduce((acc, s) => {
+                              const key = `${s.from}-${s.to}`;
+                              if (!acc[key])
+                                acc[key] = {
+                                  from: s.from,
+                                  to: s.to,
+                                  marked: 0,
+                                  settlement: s,
+                                };
+                              acc[key].marked += s.amount;
+                              acc[key].settlement = s;
+                              return acc;
+                            }, {} as Record<string, { from: string; to: string; marked: number; settlement: Settlement }>)
+                        ).map(([key, data]) => {
+                          const totalOwed = calculateSettlements(currentDiary)
+                            .filter(
+                              (s) => s.from === data.from && s.to === data.to
+                            )
+                            .reduce((sum, s) => sum + s.amount, 0);
+
+                          const remaining = totalOwed;
+                          const isUserPayer =
+                            currentDiary.people[data.from]?.userId === user.uid;
+                          const isUserReceiver =
+                            currentDiary.people[data.to]?.userId === user.uid;
+
+                          return (
+                            <div key={key} className="space-y-3 mb-6">
+                              <div className="bg-yellow-50 p-3 sm:p-4 rounded-lg border-l-4 border-yellow-500">
+                                <h4 className="text-xs font-semibold text-gray-600 uppercase mb-2">
+                                  Marked as Paid (Pending Confirmation)
+                                </h4>
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                  <div className="flex-1">
+                                    <p className="text-sm sm:text-base text-gray-800">
+                                      <span className="font-semibold">
+                                        {displayName(data.from, currentDiary)}
+                                      </span>{" "}
+                                      marked payment to{" "}
+                                      <span className="font-semibold">
+                                        {displayName(data.to, currentDiary)}
+                                      </span>{" "}
+                                      <span className="font-bold text-yellow-600">
+                                        ₹{data.marked.toFixed(2)}
+                                      </span>
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                      Marked on{" "}
+                                      {new Date(
+                                        data.settlement.markedPaidAt!
+                                      ).toLocaleString()}
+                                    </p>
+                                  </div>
+
+                                  {isUserReceiver && (
+                                    <button
+                                      onClick={() => {
+                                        firebaseService.confirmSettlement(
+                                          currentDiaryId!,
+                                          data.settlement.id
+                                        );
+                                      }}
+                                      className="bg-green-500 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-green-600 w-full sm:w-auto touch-manipulation"
+                                    >
+                                      Confirm
+                                    </button>
+                                  )}
+
+                                  {isUserPayer && (
+                                    <span className="text-xs sm:text-sm text-yellow-700 bg-yellow-100 px-3 py-1 rounded-lg">
+                                      Waiting for confirmation
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {remaining > 0.01 && (
+                                <div className="bg-purple-50 p-3 sm:p-4 rounded-lg border-l-4 border-purple-500">
+                                  <h4 className="text-xs font-semibold text-gray-600 uppercase mb-2">
+                                    Remaining Pending
+                                  </h4>
+                                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                    <p className="text-sm sm:text-base">
+                                      <span className="font-semibold">
+                                        {displayName(data.from, currentDiary)}
+                                      </span>{" "}
+                                      owes{" "}
+                                      <span className="font-semibold">
+                                        {displayName(data.to, currentDiary)}
+                                      </span>{" "}
+                                      <span className="font-bold text-purple-600">
+                                        ₹{remaining.toFixed(2)}
+                                      </span>
+                                    </p>
+                                    <div className="flex gap-2 w-full sm:w-auto">
+                                      {isUserPayer && (
+                                        <button
+                                          onClick={() => {
+                                            setInputDialog({
+                                              show: true,
+                                              title: "Mark Paid",
+                                              label: "Amount",
+                                              placeholder: `Enter amount (max ₹${remaining.toFixed(
+                                                2
+                                              )})`,
+                                              type: "number",
+                                              maxValue: remaining,
+                                              onConfirm: (value) => {
+                                                const amount =
+                                                  parseFloat(value);
+                                                if (isNaN(amount)) return;
+                                                firebaseService.markSettlementAsPaid(
+                                                  currentDiaryId!,
+                                                  data.from,
+                                                  data.to,
+                                                  amount,
+                                                  user!.uid
+                                                );
+                                                setInputDialog(null);
+                                              },
+                                            });
+                                          }}
+                                          className="flex-1 sm:flex-none bg-yellow-500 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-yellow-600 touch-manipulation"
+                                        >
+                                          Mark Paid
+                                        </button>
+                                      )}
+
+                                      {isUserReceiver && (
+                                        <button
+                                          onClick={() => {
+                                            const newSettlement: Settlement = {
+                                              id: `settlement_${Date.now()}`,
+                                              from: data.from,
+                                              to: data.to,
+                                              amount: remaining,
+                                              date: new Date().toISOString(),
+                                              status: "confirmed",
+                                            };
+                                            firebaseService.addSettlement(
+                                              currentDiaryId!,
+                                              newSettlement
+                                            );
+                                          }}
+                                          className="flex-1 sm:flex-none bg-green-500 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-green-600 touch-manipulation"
+                                        >
+                                          Settle
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {calculateSettlements(currentDiary).filter(
+                          (settlement) => {
+                            const hasMarkedPaid = currentDiary.settlements.some(
+                              (s) =>
+                                s.from === settlement.from &&
+                                s.to === settlement.to &&
+                                s.status === "marked_paid"
+                            );
+                            return !hasMarkedPaid;
+                          }
+                        ).length > 0 && (
+                          <div className="space-y-3 mb-6">
+                            <h4 className="text-sm font-semibold text-gray-600 uppercase">
+                              Pending Settlements
+                            </h4>
+                            {calculateSettlements(currentDiary)
+                              .filter((settlement) => {
+                                const hasMarkedPaid =
+                                  currentDiary.settlements.some(
+                                    (s) =>
+                                      s.from === settlement.from &&
+                                      s.to === settlement.to &&
+                                      s.status === "marked_paid"
+                                  );
+                                return !hasMarkedPaid;
+                              })
+                              .map((settlement, idx) => {
+                                const isUserPayer =
+                                  currentDiary.people[settlement.from]
+                                    ?.userId === user.uid;
+                                const isUserReceiver =
+                                  currentDiary.people[settlement.to]?.userId ===
+                                  user.uid;
+
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="bg-purple-50 p-3 sm:p-4 rounded-lg border-l-4 border-purple-500"
+                                  >
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                      <p className="text-sm sm:text-base">
+                                        <span className="font-semibold">
+                                          {displayName(
+                                            settlement.from,
+                                            currentDiary
+                                          )}
+                                        </span>{" "}
+                                        owes{" "}
+                                        <span className="font-semibold">
+                                          {displayName(
+                                            settlement.to,
+                                            currentDiary
+                                          )}
+                                        </span>{" "}
+                                        <span className="font-bold text-purple-600">
+                                          ₹{settlement.amount.toFixed(2)}
+                                        </span>
+                                      </p>
+                                      <div className="flex gap-2 w-full sm:w-auto">
+                                        {isUserPayer && (
+                                          <button
+                                            onClick={() => {
+                                              setInputDialog({
+                                                show: true,
+                                                title: "Mark Paid",
+                                                label: "Amount",
+                                                placeholder: `Enter amount (max ₹${settlement.amount.toFixed(
+                                                  2
+                                                )})`,
+                                                type: "number",
+                                                maxValue: settlement.amount,
+                                                onConfirm: (value) => {
+                                                  const amount =
+                                                    parseFloat(value);
+                                                  if (isNaN(amount)) return;
+                                                  firebaseService.markSettlementAsPaid(
+                                                    currentDiaryId!,
+                                                    settlement.from,
+                                                    settlement.to,
+                                                    amount,
+                                                    user.uid
+                                                  );
+                                                  setInputDialog(null);
+                                                },
+                                              });
+                                            }}
+                                            className="flex-1 sm:flex-none bg-yellow-500 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-yellow-600 touch-manipulation"
+                                          >
+                                            Mark Paid
+                                          </button>
+                                        )}
+
+                                        {isUserReceiver && (
+                                          <button
+                                            onClick={() => {
+                                              const newSettlement: Settlement =
+                                                {
+                                                  id: `settlement_${Date.now()}`,
+                                                  from: settlement.from,
+                                                  to: settlement.to,
+                                                  amount: settlement.amount,
+                                                  date: new Date().toISOString(),
+                                                  status: "confirmed",
+                                                };
+                                              firebaseService.addSettlement(
+                                                currentDiaryId!,
+                                                newSettlement
+                                              );
+                                            }}
+                                            className="flex-1 sm:flex-none bg-green-500 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-green-600 touch-manipulation"
+                                          >
+                                            Settle
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {currentDiary.settlements.filter(
+                      (s) => s.status === "confirmed"
+                    ).length > 0 && (
+                      <div className="mt-6">
+                        <h4 className="text-sm font-semibold text-gray-600 mb-3">
+                          Settled History
+                        </h4>
+                        {currentDiary.settlements
+                          .filter((s) => s.status === "confirmed")
+                          .map((settlement) => (
+                            <div
+                              key={settlement.id}
+                              className="bg-green-50 p-3 rounded-lg mb-2"
+                            >
+                              <p className="text-xs sm:text-sm">
+                                <span className="font-semibold">
+                                  {displayName(settlement.from, currentDiary)}
+                                </span>{" "}
+                                paid{" "}
+                                <span className="font-semibold">
+                                  {displayName(settlement.to, currentDiary)}
+                                </span>{" "}
+                                <span className="font-bold text-green-600">
+                                  ₹{settlement.amount.toFixed(2)}
+                                </span>
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {new Date(settlement.date).toLocaleString()}
+                              </p>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {showInvitations && (
+          <InvitationsPanel
+            user={user}
+            invitations={invitations}
+            onClose={() => setShowInvitations(false)}
+            onAccepted={handleRefreshData}
+          />
+        )}
+
+        {showModifications && (
+          <ModificationNotifications
+            notifications={modifications}
+            onAcknowledge={handleAcknowledgeModification}
+            onNavigate={handleNavigateToExpense}
+            onClose={() => setShowModifications(false)}
+          />
+        )}
+
+        {showDeletedExpenses && currentDiary && (
+          <DeletedExpenses
+            deletedExpenses={currentDiary.deletedExpenses || []}
+            people={currentDiary.people}
+            events={currentDiary.events}
+            currentUserId={user.uid}
+            onRestore={handleRestoreExpense}
+            onEdit={handleEditAndRestoreExpense}
+            onPermanentDelete={handlePermanentDelete}
+            onClose={() => setShowDeletedExpenses(false)}
+          />
+        )}
+
+        {showAddPerson && currentDiary && (
+          <AddPersonModal
+            diary={currentDiary}
+            currentUser={user}
+            onClose={() => setShowAddPerson(false)}
+            onAdded={handleRefreshData}
+          />
+        )}
+
+        {inputDialog && (
+          <InputDialog
+            title={inputDialog.title}
+            label={inputDialog.label}
+            placeholder={inputDialog.placeholder}
+            type={inputDialog.type}
+            onConfirm={(value) => {
+              inputDialog.onConfirm(value);
+            }}
+            onClose={() => setInputDialog(null)}
+          />
+        )}
       </div>
     </div>
   );
