@@ -36,6 +36,7 @@ import type {
 } from "./types/types";
 import { TestingBanner } from "./components/TestingBanner";
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from "@vercel/speed-insights/react"
 
 export default function ExpenseSplitter() {
   const [user, setUser] = useState<User | null>(null);
@@ -1437,6 +1438,7 @@ const settlements: Settlement[] = Array.isArray(diary.settlements) ? diary.settl
         )}
 
          <Analytics />
+         <SpeedInsights/>
 
         
       </div>
