@@ -10,7 +10,7 @@ export interface Person {
   name: string;
   email: string | null;
   userId: string | null;
-  status: 'pending' | 'accepted' | 'unregistered'; // Keep as is
+  status: 'pending' | 'accepted' | 'unregistered';
   invitedBy: string;
   invitedAt: string;
 }
@@ -25,7 +25,7 @@ export interface ExpenseVersion {
   versionNumber: number;
   timestamp: string;
   modifiedBy: string;
-  modifiedByName?: string; // ADDED: Store name at modification time
+  modifiedByName?: string;
   data: {
     description: string;
     amount: number;
@@ -42,21 +42,18 @@ export interface Expense {
   description: string;
   amount: number;
   paidBy: string;
-  eventId: string; // This should NEVER be undefined
+  eventId: string;
   splitMode: 'equal' | 'custom';
   splits: Record<string, number>;
   participants: string[];
   frozenSplits?: string[];
-  previousVersions?: ExpenseVersion[];
   date: string;
   createdBy: string;
   lastModifiedBy?: string;
   lastModifiedAt?: string;
-  lastModifiedByName?: string; // ADDED: Store name at modification time
+  lastModifiedByName?: string;
   versions?: ExpenseVersion[];
   currentVersion: number;
-  deletedBy?: string;  // ← ADD THIS
-  deletedAt?: string; 
 }
 
 export interface Settlement {
@@ -89,8 +86,8 @@ export interface Invitation {
   id: string;
   diaryId: string;
   diaryName: string;
-  personId: string; // Keep for backward compatibility
-  personEmail: string; // IMPORTANT: This is what we query by (normalized lowercase)
+  personId: string;
+  personEmail: string;
   personName: string;
   invitedBy: string;
   invitedByName: string;
@@ -107,6 +104,7 @@ export interface ModificationNotification {
   modifiedBy: string;
   modifiedByName: string;
   timestamp: string;
+  createdAt?: string;
   type: 'created' | 'modified' | 'deleted';
   amount?: number;
   participants: string[];

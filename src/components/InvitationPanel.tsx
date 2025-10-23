@@ -13,7 +13,7 @@ interface InvitationsPanelProps {
 export function InvitationsPanel({ user, invitations, onClose, onAccepted }: InvitationsPanelProps) {
   const handleAccept = async (invitation: Invitation) => {
     try {
-      await firebaseService.acceptInvitation(invitation, user.uid, user.email);
+      await firebaseService.acceptInvitation(invitation, user.uid);
       alert('Invitation accepted!');
       onAccepted();
     } catch (error) {

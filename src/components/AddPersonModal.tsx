@@ -32,7 +32,7 @@ export function AddPersonModal({ diary, currentUser, onClose, onAdded }: AddPers
     setLoading(true);
     try {
       const personId = Date.now().toString();
-      let targetUserId = null;
+      let targetUserId: string | null = null;
 
       if (email.trim()) {
         // FIX: Normalize email to lowercase for consistent matching

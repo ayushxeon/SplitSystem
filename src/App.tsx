@@ -266,13 +266,8 @@ export default function ExpenseSplitter() {
       balances[id] = 0;
     });
 
-    // ✅ Convert to array if it's not already
-    const expenses = Array.isArray(diary.expenses)
-      ? diary.expenses
-      : diary.expenses?.vc || [];
-    const settlements = Array.isArray(diary.settlements)
-      ? diary.settlements
-      : diary.settlements?.vc || [];
+    const expenses: Expense[] = Array.isArray(diary.expenses) ? diary.expenses : [];
+const settlements: Settlement[] = Array.isArray(diary.settlements) ? diary.settlements : [];
 
     // ✅ Filter out undefined/null values
     const validExpenses = expenses.filter(
@@ -350,7 +345,6 @@ export default function ExpenseSplitter() {
           editingExpenseId,
           expenseData,
           user.uid,
-          user.displayName
         );
         setEditingExpenseId(null);
       } else {
@@ -382,7 +376,6 @@ export default function ExpenseSplitter() {
         currentDiaryId,
         expenseId,
         user.uid,
-        user.displayName
       );
     } catch (error: any) {
       alert(error.message);
@@ -485,7 +478,7 @@ export default function ExpenseSplitter() {
   }
 
   if (!user) {
-    return <AuthScreen onSignIn={setUser} />;
+    return <AuthScreen onSignIn={(user) => setUser(user as User)} />;
   }
 
   return (
