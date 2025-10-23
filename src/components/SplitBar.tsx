@@ -7,16 +7,14 @@ interface SplitBarProps {
   splits: Record<string, number>;
   frozenSplits: string[];
   people: Record<string, Person>;
-  onDividerDrag: (index: number, event: React.MouseEvent | React.TouchEvent) => void;
+  onDividerDrag: (index: number, event: React.PointerEvent) => void;
 }
 
 export function SplitBar({ participants, splits, frozenSplits, people, onDividerDrag }: SplitBarProps) {
   let cumulative = 0;
   
-  const handleDragStart = (index: number, event: React.MouseEvent | React.TouchEvent) => {
-    if ('touches' in event) {
-      event.preventDefault();
-    }
+  const handleDragStart = (index: number, event: React.PointerEvent) => {
+    event.preventDefault();
     onDividerDrag(index, event);
   };
   
@@ -69,8 +67,7 @@ export function SplitBar({ participants, splits, frozenSplits, people, onDivider
                     transform: 'translateX(-50%)',
                     width: '44px', // Large touch target (recommended 44x44 for mobile)
                   }}
-                  onMouseDown={(e) => handleDragStart(index, e)}
-                  onTouchStart={(e) => handleDragStart(index, e)}
+                  onPointerDown={(e) => handleDragStart(index, e)}
                   title="Drag to adjust split"
                 >
                   {/* Visual handle */}
