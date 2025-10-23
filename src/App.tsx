@@ -35,6 +35,7 @@ import type {
   ModificationNotification,
 } from "./types/types";
 import { TestingBanner } from "./components/TestingBanner";
+import { Analytics } from '@vercel/analytics/react';
 
 export default function ExpenseSplitter() {
   const [user, setUser] = useState<User | null>(null);
@@ -1434,6 +1435,10 @@ const settlements: Settlement[] = Array.isArray(diary.settlements) ? diary.settl
             onClose={() => setInputDialog(null)}
           />
         )}
+
+         <Analytics />
+
+        
       </div>
     </div>
     </>
