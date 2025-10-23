@@ -115,47 +115,46 @@ class FirebaseService {
   }
 
   async leaveDiary(diaryId: string, userId: string): Promise<void> {
-    const diaryRef = doc(db, "diaries", diaryId);
-    const diarySnap = await getDoc(diaryRef);
+  const diaryRef = doc(db, 'diaries', diaryId);
+  const diarySnap = await getDoc(diaryRef);
 
-    if (!diarySnap.exists()) throw new Error("Diary not found");
+  if (!diarySnap.exists()) throw new Error('Diary not found');
 
-    const diary = diarySnap.data() as Diary;
+  const diary = diarySnap.data() as Diary;
 
-    const hasExpenses = diary.expenses.some(
-      (exp) => exp.paidBy === userId || exp.participants.includes(userId)
-    );
+  const hasExpenses = diary.expenses.some(
+    (exp) => exp.paidBy === userId || exp.participants.includes(userId)
+  );
 
-    const hasSettlements = diary.settlements.some(
-      (set) => set.from === userId || set.to === userId
-    );
+  const hasSettlements = diary.settlements.some(
+    (set) => set.from === userId || set.to === userId
+  );
 
-    if (hasExpenses || hasSettlements) {
-      throw new Error("Cannot leave diary with pending transactions.");
-    }
-
-    const personEntry = Object.entries(diary.people).find(
-      ([_, person]) => person.userId === userId
-    );
-
-    if (!personEntry) throw new Error("User not found in diary");
-
-    const [personId, person] = personEntry;
-
-    const updates: any = {
-      members: arrayRemove(userId),
-      updatedAt: new Date().toISOString(),
-    };
-
-    updates[`people.${personId}`] = {
-      ...person,
-      status: "guest",
-      userId: undefined,
-    };
-
-    await updateDoc(diaryRef, this.clean(updates));
-    cacheService.removeDiary(diaryId);
+  if (hasExpenses || hasSettlements) {
+    throw new Error('Cannot leave diary with pending transactions.');
   }
+
+  const personEntry = Object.entries(diary.people).find(
+    ([_, person]) => person.userId === userId
+  );
+
+  if (!personEntry) throw new Error('User not found in diary');
+
+  const [personId, person] = personEntry;
+
+  // ✅ FIX: Use deleteField() instead of setting to null/undefined
+  const { deleteField } = await import('firebase/firestore');
+  
+  const updates: any = {
+    members: arrayRemove(userId),
+    [`people.${personId}.status`]: 'unregistered',
+    [`people.${personId}.userId`]: deleteField(),  // ✅ Properly delete field
+    updatedAt: new Date().toISOString(),
+  };
+
+  await updateDoc(diaryRef, updates);
+  cacheService.removeDiary(diaryId);
+}
 
   /**
    * Register a new user or update existing user's last login
@@ -788,12 +787,12 @@ class FirebaseService {
     await setDoc(invitationRef, invitation);
   }
 
-  async loadInvitations(userEmail: string): Promise<Invitation[]> {
-    const normalizedEmail = userEmail.toLowerCase();
-    const emailQuery = query(
-      collection(db, "invitations"),
-      where("personId", "==", normalizedEmail)
-    );
+async loadInvitations(userEmail: string): Promise<Invitation[]> {
+  const normalizedEmail = userEmail.toLowerCase();
+  const emailQuery = query(
+    collection(db, 'invitations'),
+    where('personEmail', '==', normalizedEmail)  // ✅ CORRECT FIELD
+  );
 
     const emailSnapshot = await getDocs(emailQuery);
     const invitations = emailSnapshot.docs.map((doc) => ({

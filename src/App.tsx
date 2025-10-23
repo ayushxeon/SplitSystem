@@ -77,6 +77,12 @@ export default function ExpenseSplitter() {
   };
 
   useEffect(() => {
+  // Reset expense form when switching diaries
+  setEditingExpenseId(null);
+  setShowAddExpense(false);
+}, [currentDiaryId]);
+
+  useEffect(() => {
     let unsubInvites: (() => void) | undefined;
     let unsubModifications: (() => void) | undefined;
     let unsubDiaries: (() => void) | undefined;
