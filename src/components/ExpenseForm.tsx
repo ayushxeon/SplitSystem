@@ -330,7 +330,6 @@ export function ExpenseForm({ people, events, currentUser, editingExpense, onSub
           <div className="space-y-2">
             {participants.map((personId, index) => {
               const person = people[personId];
-              const percentage = parseInt(splits[personId]?.toString() || '0');
               const isFrozen = frozenSplits.includes(personId);
               
               return (

@@ -22,7 +22,6 @@ import type {
   Expense, 
   Event, 
   Settlement,
-  ExpenseVersion,
   ModificationNotification 
 } from '../types/types';
 
@@ -231,6 +230,7 @@ class FirebaseService {
             diaryId: diary.id,
             diaryName: diary.name,
             personId: email.toLowerCase(),
+            personEmail: email.toLowerCase(),
             personName: displayName,
             invitedBy: person.invitedBy,
             invitedByName: diary.people[person.invitedBy]?.name || 'Unknown',
@@ -370,7 +370,7 @@ class FirebaseService {
         diaryId,
         diaryName: diary.name,
         expenseId: expense.id,
-        expenseDescription: expense.description,
+        expenseName: expense.description,
         type: 'created',
         modifiedBy: expense.createdBy,
         modifiedByName: diary.people[Object.keys(diary.people).find(id => diary.people[id].userId === expense.createdBy)!]?.name || 'Unknown',
@@ -428,8 +428,7 @@ class FirebaseService {
       updatedAt: new Date().toISOString()
     }));
 
-    const participantsToNotify = updatedExpense.participants
-      .filter((p: string) => {
+    const participantsToNotify = (updatedExpense.participants || []).filter((p: string) => {
         const person = diary.people[p];
         return person?.userId && person.userId !== currentUserId;
       });
@@ -440,7 +439,7 @@ class FirebaseService {
         diaryId,
         diaryName: diary.name,
         expenseId: expenseId,
-        expenseDescription: updatedExpense.description,
+        expenseName: updatedExpense.description,
         type: 'modified',
         modifiedBy: currentUserId,
         modifiedByName: modifierName,
@@ -490,7 +489,7 @@ class FirebaseService {
         diaryId,
         diaryName: diary.name,
         expenseId: expenseId,
-        expenseDescription: expense.description,
+        expenseName: expense.description,
         type: 'deleted',
         modifiedBy: currentUserId,
         modifiedByName: diary.people[Object.keys(diary.people).find(id => diary.people[id].userId === currentUserId)!]?.name || 'Unknown',
@@ -705,7 +704,7 @@ class FirebaseService {
     cacheService.setInvitations(invitations);
   });
 }
-  async acceptInvitation(invitation: Invitation, userId: string, userEmail: string): Promise<void> {
+  async acceptInvitation(invitation: Invitation, userId: string): Promise<void> {
     const diaryRef = doc(db, 'diaries', invitation.diaryId);
     const diarySnap = await getDoc(diaryRef);
     
@@ -723,7 +722,7 @@ class FirebaseService {
       throw new Error('Person not found in diary. The invitation may be outdated.');
     }
 
-    const [actualPersonId, person] = personEntry;
+    const [actualPersonId, _person] = personEntry;
 
     // Update person status and link to user
     await updateDoc(diaryRef, this.clean({

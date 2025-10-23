@@ -59,7 +59,6 @@ export function PeopleManager({
 
     try {
       const person = diary.people[personId];
-      const oldEmail = person.email;
 
       // Update email
       await firebaseService.updatePerson(diary.id, personId, {

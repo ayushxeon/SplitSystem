@@ -47,6 +47,7 @@ export interface Expense {
   splits: Record<string, number>;
   participants: string[];
   frozenSplits?: string[];
+  previousVersions?: ExpenseVersion[];
   date: string;
   createdBy: string;
   lastModifiedBy?: string;
@@ -54,6 +55,8 @@ export interface Expense {
   lastModifiedByName?: string; // ADDED: Store name at modification time
   versions?: ExpenseVersion[];
   currentVersion: number;
+  deletedBy?: string;  // ← ADD THIS
+  deletedAt?: string; 
 }
 
 export interface Settlement {
