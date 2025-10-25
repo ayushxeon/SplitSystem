@@ -71,7 +71,7 @@ export function AddPersonModal({ diary, currentUser, allDiaries, onClose, onAdde
     return;
   }
 
-  const normalizedEmail = email.trim().toLowerCase() || null;
+  const normalizedEmail = email.trim().toLowerCase() || undefined;
 
   // ✅ CHECK: Am I trying to add myself?
   if (normalizedEmail === currentUser.email.toLowerCase()) {
@@ -93,12 +93,11 @@ export function AddPersonModal({ diary, currentUser, allDiaries, onClose, onAdde
 
   setAdding(true);
   try {
-    let targetUserId: string | null = null;
+    let targetUserId: string | undefined = undefined;
 
     if (normalizedEmail) {
-      targetUserId = await firebaseService.checkUserExists(normalizedEmail);
-    }
-
+  targetUserId = await firebaseService.checkUserExists(normalizedEmail) || undefined;
+}
     const personId = targetUserId || `guest_${Date.now()}`;
 
     const newPerson: Person = {

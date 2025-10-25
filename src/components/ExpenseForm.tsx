@@ -35,7 +35,10 @@ export function ExpenseForm({ people, events, currentUser, editingExpense, onSub
     editingExpense?.eventId || (events.length > 0 ? events[0].id : 'general')
   );
   
-  const [splitMode, setSplitMode] = useState<'equal' | 'custom'>(editingExpense?.splitMode || 'equal');
+  const [splitMode, setSplitMode] = useState<'equal' | 'custom'>(() => {
+  if (editingExpense?.splitMode === 'percentage') return 'custom';
+  return editingExpense?.splitMode === 'custom' ? 'custom' : 'equal';
+});
   const [participants, setParticipants] = useState<string[]>(
     editingExpense?.participants || participantIds
   );

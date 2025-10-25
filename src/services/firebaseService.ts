@@ -596,7 +596,7 @@ async removePerson(diaryId: string, personId: string): Promise<void> {
             status: 'pending',
             invitedBy: diary.createdBy,
             invitedAt: new Date().toISOString(),
-          };
+          } as Person; // ✅ Type assertion since email and userId are optional
         }
       }
     }

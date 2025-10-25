@@ -1,61 +1,94 @@
+// User type
 export interface User {
   uid: string;
   email: string;
   displayName: string;
-  photoURL?: string;
+  photoURL?: string | null;
 }
 
+// Person in a diary
 export interface Person {
   id: string;
   name: string;
-  email: string | null;
-  userId: string | null;
-  status: 'pending' | 'accepted' | 'unregistered';
+  email?: string;
+  userId?: string;
+  status: 'unregistered' | 'pending' | 'accepted' | 'rejected'; // ✅ Added 'rejected'
   invitedBy: string;
   invitedAt: string;
 }
 
+// Expense
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  paidBy: string;
+  participants: string[];
+  splits: Record<string, number>;
+  date: string;
+  eventId: string;
+  splitMode: 'equal' | 'percentage' | 'custom';
+  createdBy: string;
+  
+  // Modification tracking
+  modifiedBy?: string;
+  modifiedByName?: string;
+  modifiedAt?: string;
+  lastModifiedBy?: string;
+  lastModifiedAt?: string;
+  
+  // Versioning
+  currentVersion?: number;
+  versions?: ExpenseVersion[];
+  
+  // ✅ NEW: Deletion tracking
+  deletedBy?: string;
+  deletedAt?: string;
+  
+  // ✅ NEW: People snapshot for restoration
+  peopleSnapshot?: Record<string, Person>;
+  
+  // ✅ NEW: Frozen splits for custom split mode
+  frozenSplits?: string[];
+}
+
+// Expense version for history
+export interface ExpenseVersion {
+  versionNumber: number;
+  timestamp: string;
+  modifiedBy: string;
+  modifiedByName: string;
+  data: {
+    description: string;
+    amount: number;
+    paidBy: string;
+    eventId: string;
+    splitMode: 'equal' | 'percentage' | 'custom';
+    splits: Record<string, number>;
+    participants: string[];
+  };
+}
+
+// Event
 export interface Event {
   id: string;
   name: string;
   order: number;
 }
 
-export interface ExpenseVersion {
-  versionNumber: number;
-  timestamp: string;
-  modifiedBy: string;
-  modifiedByName?: string;
-  data: {
-    description: string;
-    amount: number;
-    paidBy: string;
-    eventId: string;
-    splitMode: 'equal' | 'custom';
-    splits: Record<string, number>;
-    participants: string[];
-  };
-}
-
-export interface Expense {
+// Settlement
+export interface Settlement {
   id: string;
-  description: string;
+  from: string;
+  to: string;
   amount: number;
-  paidBy: string;
-  eventId: string;
-  splitMode: 'equal' | 'custom';
-  splits: Record<string, number>;
-  participants: string[];
-  frozenSplits?: string[];
   date: string;
-  createdBy: string;
-  lastModifiedBy?: string;
-  lastModifiedAt?: string;
-  lastModifiedByName?: string;
-  versions?: ExpenseVersion[];
-  currentVersion: number;
+  status: 'pending' | 'confirmed' | 'marked_paid';
+  markedPaidBy?: string;
+  markedPaidAt?: string;
 }
 
+// Join Request
 export interface JoinRequest {
   id: string;
   userId: string;
@@ -64,17 +97,8 @@ export interface JoinRequest {
   requestedAt: string;
   status: 'pending' | 'approved' | 'rejected';
 }
-export interface Settlement {
-  id: string;
-  from: string;
-  to: string;
-  amount: number;
-  date: string;
-  status: 'pending' | 'marked_paid' | 'confirmed';
-  markedPaidBy?: string;
-  markedPaidAt?: string;
-}
 
+// Diary
 export interface Diary {
   id: string;
   name: string;
@@ -82,15 +106,15 @@ export interface Diary {
   members: string[];
   people: Record<string, Person>;
   expenses: Expense[];
-  deletedExpenses?: Expense[];
+  deletedExpenses?: Expense[]; // ✅ For soft delete
   settlements: Settlement[];
   events: Event[];
+  joinRequests?: JoinRequest[];
   createdAt: string;
   updatedAt: string;
-  inviteLink?: string;
-  joinRequests?: JoinRequest[];  // ✅ ADD THIS
 }
 
+// Invitation
 export interface Invitation {
   id: string;
   diaryId: string;
@@ -102,21 +126,22 @@ export interface Invitation {
   invitedByName: string;
   status: 'pending' | 'accepted' | 'rejected';
   createdAt: string;
-  invitedAt?: string;  // ✅ ADD THIS
+  invitedAt?: string;
 }
 
+// Modification Notification
 export interface ModificationNotification {
   id: string;
   diaryId: string;
   diaryName: string;
   expenseId: string;
   expenseName: string;
+  type: 'created' | 'modified' | 'deleted';
   modifiedBy: string;
   modifiedByName: string;
   timestamp: string;
-  createdAt?: string;
-  type: 'created' | 'modified' | 'deleted';
-  amount?: number;
   participants: string[];
   acknowledged: string[];
+  createdAt: string;
+  amount?: number; // ✅ Optional amount for created notifications
 }

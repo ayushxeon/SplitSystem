@@ -1137,7 +1137,7 @@ useEffect(() => {
                                               {expense.lastModifiedBy && (
                                                 <div className="text-xs text-orange-600 mt-1">
                                                   Modified by{" "}
-                                                  {expense.lastModifiedByName || // First try stored name (new approach)
+                                                  {expense.modifiedByName || // First try stored name (new approach)
                                                     (() => {
                                                       // Fallback: Find person by userId
                                                       const person =
