@@ -878,6 +878,56 @@ async loadInvitations(userEmail: string): Promise<Invitation[]> {
   }
 
   /**
+   * ✅ NEW: Validate if invitation is still valid (diary exists)
+   */
+  async validateInvitation(diaryId: string): Promise<boolean> {
+    try {
+      const diaryRef = doc(db, "diaries", diaryId);
+      const diarySnap = await getDoc(diaryRef);
+      return diarySnap.exists();
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * ✅ NEW: Reject an invitation - marks person as "rejected" in diary
+   */
+  async rejectInvitation(
+    invitationId: string,
+    diaryId: string,
+    personId: string
+  ): Promise<void> {
+    const diaryRef = doc(db, "diaries", diaryId);
+    const diarySnap = await getDoc(diaryRef);
+
+    if (diarySnap.exists()) {
+      // Update person status to "rejected" in the diary
+      await updateDoc(
+        diaryRef,
+        this.clean({
+          [`people.${personId}.status`]: "rejected",
+          updatedAt: new Date().toISOString(),
+        })
+      );
+    }
+
+    // Mark invitation as rejected
+    const invitationRef = doc(db, "invitations", invitationId);
+    await updateDoc(invitationRef, {
+      status: "rejected",
+    });
+  }
+
+  /**
+   * ✅ NEW: Dismiss an invalid invitation (delete it)
+   */
+  async dismissInvitation(invitationId: string): Promise<void> {
+    const invitationRef = doc(db, "invitations", invitationId);
+    await deleteDoc(invitationRef);
+  }
+
+  /**
  * Request to join a diary (when user clicks invite link but isn't added)
  */
 async requestToJoin(

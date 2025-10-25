@@ -236,12 +236,15 @@ export function PeopleManager({
                           {person.email || "No email"}
                         </p>
                         <div className="flex items-center gap-2 flex-wrap">
+                          {/* ✅ FIXED: Added rejected status */}
                           <span
                             className={`text-xs px-2 py-1 rounded-full font-medium ${
                               person.status === "accepted"
                                 ? "bg-green-100 text-green-700"
                                 : person.status === "pending"
                                 ? "bg-yellow-100 text-yellow-700"
+                                : person.status === "rejected"
+                                ? "bg-red-100 text-red-700"
                                 : "bg-gray-100 text-gray-700"
                             }`}
                           >
@@ -249,6 +252,8 @@ export function PeopleManager({
                               ? "✓ Joined"
                               : person.status === "pending"
                               ? "⏳ Pending"
+                              : person.status === "rejected"
+                              ? "❌ Rejected"
                               : "👤 Guest"}
                           </span>
                           {hasTransactions && (

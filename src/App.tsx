@@ -914,6 +914,10 @@ useEffect(() => {
   } else if (person.status === 'accepted') {
     statusBadge = 'Joined';
     statusColor = 'bg-green-100 text-green-700';
+  } else if (person.status === 'rejected') {
+    // ✅ NEW: Show rejected status
+    statusBadge = 'Rejected';
+    statusColor = 'bg-red-100 text-red-700';
   }
 
   return (
