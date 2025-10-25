@@ -110,7 +110,11 @@ export function ExpenseForm({ people, events, currentUser, editingExpense, onSub
     let newRight = total - newLeft;
     
     // Clamp to min 5%
-    newLeft = Math.max(5, Math.min(total - 5, newLeft));
+    newLeft = Math.max(0, Math.min(total, newLeft));
+
+// Keep a minimal visual width (1px) so even 0% segments stay draggable
+if (newLeft < 0.5) newLeft = 0;
+if (newLeft > total - 0.5) newLeft = total;
     newRight = total - newLeft;
     
     // Round

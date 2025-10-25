@@ -786,7 +786,7 @@ useEffect(() => {
                   </h2>
                  <button
   onClick={async () => {
-    const inviteLink = `https://splitsync.vercel.app/invite/${currentDiary.id}`;
+    const inviteLink = `https://syncsplit.vercel.app/invite/${currentDiary.id}`;
     const message = `Join "${currentDiary.name}" on SplitSync - Track expenses together!\n\n${inviteLink}`;
     
     // Try native share (mobile)
