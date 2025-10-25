@@ -23,6 +23,20 @@ export function DeletedExpenses({
   onPermanentDelete,
   onClose 
 }: DeletedExpensesProps) {
+  // ✅ Helper function to get person name from peopleSnapshot or current people
+  const getPersonName = (expense: any, personId: string): string => {
+    // First try peopleSnapshot (stored when expense was deleted)
+    if (expense.peopleSnapshot && expense.peopleSnapshot[personId]) {
+      return expense.peopleSnapshot[personId].name;
+    }
+    // Fallback to current people in diary
+    if (people[personId]) {
+      return people[personId].name;
+    }
+    // Last resort
+    return 'Unknown';
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full my-8 p-6 max-h-[90vh] overflow-y-auto">
@@ -59,7 +73,7 @@ export function DeletedExpenses({
                       </p>
                       
                       <p className="text-sm text-gray-700 mb-2">
-                        <span className="font-semibold">Paid by:</span> {people[expense.paidBy]?.name || 'Unknown'}
+                        <span className="font-semibold">Paid by:</span> {getPersonName(expense, expense.paidBy)}
                         {expense.paidBy === currentUserId && (
                           <span className="ml-1 text-blue-600 font-medium">(You)</span>
                         )}
@@ -70,7 +84,7 @@ export function DeletedExpenses({
                         <div className="mt-1 flex flex-wrap gap-2">
                           {expense.participants.map(p => (
                             <span key={p} className="bg-gray-100 px-2 py-1 rounded text-xs">
-                              {people[p]?.name || 'Unknown'} 
+                              {getPersonName(expense, p)}
                               {p === currentUserId && <span className="text-blue-600"> (You)</span>}
                               : {expense.splits[p]}%
                             </span>
@@ -80,10 +94,10 @@ export function DeletedExpenses({
                       
                       <div className="text-xs text-gray-500 mt-2">
                         <p>Created: {new Date(expense.date).toLocaleString()}</p>
-                        {expense.lastModifiedAt && (
+                        {expense.deletedAt && expense.deletedBy && (
                           <p className="text-red-600">
-                            Deleted by {people[expense.lastModifiedBy!]?.name || 'Unknown'} on{' '}
-                            {new Date(expense.lastModifiedAt).toLocaleString()}
+                            Deleted by {getPersonName(expense, expense.deletedBy)} on{' '}
+                            {new Date(expense.deletedAt).toLocaleString()}
                           </p>
                         )}
                       </div>

@@ -1,18 +1,18 @@
-// firebaseService.ts - FIXED VERSION with all corrections
-
 import {
   collection,
   doc,
-  setDoc,
   getDoc,
   getDocs,
+  setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
+  onSnapshot,
   arrayUnion,
   arrayRemove,
-  onSnapshot,
-} from "firebase/firestore";
+  deleteField,  // ✅ ADD THIS
+} from 'firebase/firestore';
 import { db } from "../firebase/firebase";
 import { cacheService } from "./storage";
 import type {
@@ -23,6 +23,7 @@ import type {
   Event,
   Settlement,
   ModificationNotification,
+  JoinRequest
 } from "../types/types";
 
 class FirebaseService {
@@ -114,46 +115,35 @@ class FirebaseService {
     return unsubscribe;
   }
 
-  async leaveDiary(diaryId: string, userId: string): Promise<void> {
+ /**
+ * Remove a person from diary completely
+ */
+async removePerson(diaryId: string, personId: string): Promise<void> {
   const diaryRef = doc(db, 'diaries', diaryId);
   const diarySnap = await getDoc(diaryRef);
 
-  if (!diarySnap.exists()) throw new Error('Diary not found');
-
-  const diary = diarySnap.data() as Diary;
-
-  const hasExpenses = diary.expenses.some(
-    (exp) => exp.paidBy === userId || exp.participants.includes(userId)
-  );
-
-  const hasSettlements = diary.settlements.some(
-    (set) => set.from === userId || set.to === userId
-  );
-
-  if (hasExpenses || hasSettlements) {
-    throw new Error('Cannot leave diary with pending transactions.');
+  if (!diarySnap.exists()) {
+    throw new Error('Diary not found');
   }
 
-  const personEntry = Object.entries(diary.people).find(
-    ([_, person]) => person.userId === userId
-  );
+  const diary = diarySnap.data() as Diary;
+  const person = diary.people[personId];
 
-  if (!personEntry) throw new Error('User not found in diary');
+  if (!person) {
+    throw new Error('Person not found');
+  }
 
-  const [personId, person] = personEntry;
-
-  // ✅ FIX: Use deleteField() instead of setting to null/undefined
-  const { deleteField } = await import('firebase/firestore');
-  
+  // Remove from members if they were a member
   const updates: any = {
-    members: arrayRemove(userId),
-    [`people.${personId}.status`]: 'unregistered',
-    [`people.${personId}.userId`]: deleteField(),  // ✅ Properly delete field
+    [`people.${personId}`]: deleteField(),
     updatedAt: new Date().toISOString(),
   };
 
+  if (person.userId && diary.members.includes(person.userId)) {
+    updates.members = arrayRemove(person.userId);
+  }
+
   await updateDoc(diaryRef, updates);
-  cacheService.removeDiary(diaryId);
 }
 
   /**
@@ -218,16 +208,42 @@ class FirebaseService {
       ? { ...person, email: person.email.toLowerCase() }
       : person;
 
-    await updateDoc(
-      diaryRef,
-      this.clean({
-        [`people.${person.id}`]: normalizedPerson,
-        updatedAt: new Date().toISOString(),
-      })
+    // ✅ FIX 1: CHECK if this person has a pending join request, auto-approve it
+    const pendingRequest = diary.joinRequests?.find(
+      (r) => r.userEmail.toLowerCase() === normalizedPerson.email?.toLowerCase() && r.status === 'pending'
     );
 
+    // ✅ CRITICAL FIX: If auto-approving, set status to "accepted" and use their userId
+    let finalPerson = normalizedPerson;
+    if (pendingRequest) {
+      finalPerson = {
+        ...normalizedPerson,
+        userId: pendingRequest.userId,  // Use the userId from the request
+        status: 'accepted',  // ✅ SET TO ACCEPTED, NOT PENDING!
+      };
+    }
+
+    const updates: any = {
+      [`people.${person.id}`]: finalPerson,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // ✅ If there's a pending request, remove it and add them as member
+    if (pendingRequest) {
+      const updatedRequests = (diary.joinRequests || []).filter(
+        (r) => r.id !== pendingRequest.id
+      );
+      updates.joinRequests = updatedRequests;
+      updates.members = arrayUnion(pendingRequest.userId);
+      
+      console.log("✅ Auto-approved pending join request for:", person.email);
+    }
+
+    await updateDoc(diaryRef, this.clean(updates));
+
     // Create invitation if person has email (for both guests and registered users)
-    if (person.email) {
+    // BUT skip if we just auto-approved their request (they're already being added)
+    if (person.email && !pendingRequest) {
       const invitationId = `${diaryId}_${person.id}_${Date.now()}`;
       const invitation: Invitation = {
         id: invitationId,
@@ -416,14 +432,32 @@ class FirebaseService {
       })
     );
 
-    const participantsToNotify = (updatedExpense.participants || []).filter(
+    // ✅ FIX 3: Notify BOTH current participants AND removed participants
+    const oldParticipants = oldExpense.participants || [];
+    const newParticipants = updatedExpense.participants || [];
+    
+    // People who are still in the expense (current participants)
+    const currentParticipantsToNotify = newParticipants.filter(
       (p: string) => {
         const person = diary.people[p];
         return person?.userId && person.userId !== userId;
       }
     );
 
-    if (participantsToNotify.length > 0) {
+    // ✅ People who were REMOVED from the expense (they need to know!)
+    const removedParticipants = oldParticipants.filter(
+      (p: string) => !newParticipants.includes(p)
+    ).filter((p: string) => {
+      const person = diary.people[p];
+      return person?.userId && person.userId !== userId;
+    });
+
+    // Combine both groups for notification
+    const allParticipantsToNotify = [
+      ...new Set([...currentParticipantsToNotify, ...removedParticipants])
+    ];
+
+    if (allParticipantsToNotify.length > 0) {
       const notification: ModificationNotification = {
         id: `notif_${Date.now()}`,
         diaryId,
@@ -434,7 +468,7 @@ class FirebaseService {
         modifiedBy: userId,
         modifiedByName: modifierName,
         timestamp: new Date().toISOString(),
-        participants: participantsToNotify.map(
+        participants: allParticipantsToNotify.map(
           (p: string) => diary.people[p].userId!
         ),
         acknowledged: [],
@@ -460,10 +494,22 @@ class FirebaseService {
 
     if (!expense) throw new Error("Expense not found");
 
+    // ✅ ENHANCEMENT: Store a snapshot of people involved in this expense
+    // This allows proper restoration even if people leave the diary later
+    const involvedPeople: Record<string, Person> = {};
+    const allInvolvedPeople = [expense.paidBy, ...expense.participants];
+    
+    for (const personId of allInvolvedPeople) {
+      if (diary.people[personId]) {
+        involvedPeople[personId] = diary.people[personId];
+      }
+    }
+
     const deletedExpense = {
       ...expense,
       deletedBy: userId,
       deletedAt: new Date().toISOString(),
+      peopleSnapshot: involvedPeople, // ✅ Store people data for restoration
     };
 
     const newExpenses = diary.expenses.filter((exp) => exp.id !== expenseId);
@@ -520,19 +566,58 @@ class FirebaseService {
 
     if (!deletedExpense) throw new Error("Deleted expense not found");
 
-    const restoredExpense = { ...deletedExpense };
+    // ✅ FIX: Check if all people involved in the expense still exist in the diary
+    const allInvolvedPeople = [
+      deletedExpense.paidBy,
+      ...deletedExpense.participants
+    ];
+    
+    const missingPeople: string[] = [];
+    const peopleToReAdd: Record<string, Person> = {};
 
-    const newDeletedExpenses =
-      diary.deletedExpenses?.filter((exp: any) => exp.id !== expenseId) || [];
+    for (const personId of allInvolvedPeople) {
+      if (!diary.people[personId]) {
+        missingPeople.push(personId);
+        
+        // ✅ Use the stored peopleSnapshot if available
+        if (deletedExpense.peopleSnapshot && deletedExpense.peopleSnapshot[personId]) {
+          const originalPerson = deletedExpense.peopleSnapshot[personId];
+          peopleToReAdd[personId] = {
+            ...originalPerson,
+            status: 'pending', // ✅ Re-add as pending, not accepted
+            invitedBy: diary.createdBy,
+            invitedAt: new Date().toISOString(),
+          };
+        } else {
+          // Fallback: create minimal person entry
+          peopleToReAdd[personId] = {
+            id: personId,
+            name: `Person ${personId.slice(-6)}`, // Use last 6 chars of ID as placeholder
+            status: 'pending',
+            invitedBy: diary.createdBy,
+            invitedAt: new Date().toISOString(),
+          };
+        }
+      }
+    }
 
-    await updateDoc(
-      diaryRef,
-      this.clean({
-        expenses: arrayUnion(restoredExpense),
-        deletedExpenses: newDeletedExpenses,
-        updatedAt: new Date().toISOString(),
-      })
-    );
+    // ✅ If there are missing people, re-add them to the diary
+    const updates: any = {
+      expenses: arrayUnion(deletedExpense),
+      deletedExpenses: diary.deletedExpenses?.filter((exp: any) => exp.id !== expenseId) || [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Re-add missing people as pending
+    if (missingPeople.length > 0) {
+      for (const personId of missingPeople) {
+        updates[`people.${personId}`] = peopleToReAdd[personId];
+      }
+      
+      console.log(`✅ Re-added ${missingPeople.length} missing person(s) as 'pending' during expense restoration`);
+    }
+
+    await updateDoc(diaryRef, this.clean(updates));
   }
 
   async permanentlyDeleteExpense(
@@ -792,6 +877,139 @@ async loadInvitations(userEmail: string): Promise<Invitation[]> {
     });
   }
 
+  /**
+ * Request to join a diary (when user clicks invite link but isn't added)
+ */
+async requestToJoin(
+  diaryId: string,
+  user: { uid: string; email: string; displayName: string }
+): Promise<void> {
+  const diaryRef = doc(db, 'diaries', diaryId);
+  const diarySnap = await getDoc(diaryRef);
+
+  if (!diarySnap.exists()) throw new Error('Diary not found');
+
+  const diary = diarySnap.data() as Diary;
+
+  // Check if already a member
+  if (diary.members.includes(user.uid)) {
+    throw new Error('You are already a member of this diary');
+  }
+
+  // ✅ FIX: Check if user was already invited as guest
+  const guestEntry = Object.entries(diary.people).find(
+    ([_, person]) =>
+      person.email?.toLowerCase() === user.email.toLowerCase() &&
+      person.status === 'unregistered'
+  );
+
+  if (guestEntry) {
+    // User was invited! Auto-create invitation instead of join request
+    const [personId] = guestEntry;
+    
+    await this.createInvitationForGuest(
+      diaryId,
+      personId,
+      user.email,
+      diary.name
+    );
+    
+    throw new Error('REDIRECT_TO_INVITATIONS'); // Special error to trigger redirect
+  }
+
+  // Check if already requested
+  const existingRequest = diary.joinRequests?.find(
+    (r) => r.userId === user.uid && r.status === 'pending'
+  );
+
+  if (existingRequest) {
+    throw new Error('You have already requested to join this diary');
+  }
+
+  // Create join request
+  const joinRequest: JoinRequest = {
+    id: `req_${Date.now()}`,
+    userId: user.uid,
+    userName: user.displayName,
+    userEmail: user.email.toLowerCase(),
+    requestedAt: new Date().toISOString(),
+    status: 'pending',
+  };
+
+  await updateDoc(diaryRef, {
+    joinRequests: arrayUnion(joinRequest),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Approve join request
+ */
+async approveJoinRequest(
+  diaryId: string,
+  requestId: string,
+  approverId: string
+): Promise<void> {
+  const diaryRef = doc(db, 'diaries', diaryId);
+  const diarySnap = await getDoc(diaryRef);
+
+  if (!diarySnap.exists()) throw new Error('Diary not found');
+
+  const diary = diarySnap.data() as Diary;
+
+  if (!diary.members.includes(approverId)) {
+    throw new Error('You are not authorized to approve requests');
+  }
+
+  const request = diary.joinRequests?.find((r) => r.id === requestId);
+  if (!request) throw new Error('Request not found');
+
+  // Create person entry
+  const personId = request.userId;
+  const newPerson: Person = {
+    id: personId,
+    name: request.userName,
+    email: request.userEmail,
+    userId: request.userId,
+    status: 'accepted',
+    invitedBy: approverId,
+    invitedAt: new Date().toISOString(),
+  };
+
+  // ✅ FIX: REMOVE the request entirely instead of marking as approved
+  const updatedRequests = (diary.joinRequests || []).filter(
+    (r) => r.id !== requestId
+  );
+
+  await updateDoc(diaryRef, {
+    [`people.${personId}`]: newPerson,
+    members: arrayUnion(request.userId),
+    joinRequests: updatedRequests,  // ✅ Removes the request
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Reject join request
+ */
+async rejectJoinRequest(diaryId: string, requestId: string): Promise<void> {
+  const diaryRef = doc(db, 'diaries', diaryId);
+  const diarySnap = await getDoc(diaryRef);
+
+  if (!diarySnap.exists()) throw new Error('Diary not found');
+
+  const diary = diarySnap.data() as Diary;
+
+  // ✅ FIX: REMOVE the request entirely
+  const updatedRequests = (diary.joinRequests || []).filter(
+    (r) => r.id !== requestId
+  );
+
+  await updateDoc(diaryRef, {
+    joinRequests: updatedRequests,
+    updatedAt: new Date().toISOString(),
+  });
+}
   // ============= NOTIFICATION OPERATIONS =============
 
   subscribeToModifications(
@@ -862,6 +1080,100 @@ async loadInvitations(userEmail: string): Promise<Invitation[]> {
       console.log("✅ Linked guest to user:", email);
     }
   }
+
+  /**
+ * Leave a diary (removes user from members and people)
+ */
+async leaveDiary(diaryId: string, userId: string): Promise<void> {
+  const diaryRef = doc(db, 'diaries', diaryId);
+  const diarySnap = await getDoc(diaryRef);
+
+  if (!diarySnap.exists()) {
+    throw new Error('Diary not found');
+  }
+
+  const diary = diarySnap.data() as Diary;
+
+  if (!diary.members.includes(userId)) {
+    throw new Error('You are not a member of this diary');
+  }
+
+  // Find user's person entry
+  const personEntry = Object.entries(diary.people).find(
+    ([_, person]) => person.userId === userId
+  );
+
+  if (!personEntry) {
+    throw new Error('User not found in diary');
+  }
+
+  const [personId] = personEntry;
+
+  // ✅ FIX 2: ONLY check ACTIVE expenses (ignore deleted expenses - they can be permanently deleted)
+  const hasActiveExpenses = diary.expenses.some(
+    (exp) => exp.paidBy === personId || exp.participants.includes(personId)
+  );
+
+  // ✅ Check pending settlements (only "pending" status matters)
+  const hasPendingSettlements = diary.settlements?.some(
+    (settlement) => 
+      settlement.status === 'pending' && 
+      (settlement.from === personId || settlement.to === personId)
+  );
+
+  if (hasActiveExpenses || hasPendingSettlements) {
+    throw new Error('Cannot leave diary - you have active expenses or pending settlements. Please settle all transactions first.');
+  }
+
+  // Remove from both members and people
+  const updates: any = {
+    members: arrayRemove(userId),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Use deleteField to remove person entry
+  updates[`people.${personId}`] = deleteField();
+
+  await updateDoc(diaryRef, updates);
+  cacheService.removeDiary(diaryId);
+}
+
+  /**
+ * Create invitation for guest user who signs in via invite link
+ */
+async createInvitationForGuest(
+  diaryId: string,
+  personId: string,
+  userEmail: string,
+  diaryName: string
+): Promise<void> {
+  // Load diary first to get person info
+  const diaryDoc = await getDoc(doc(db, 'diaries', diaryId));
+  
+  if (!diaryDoc.exists()) {
+    throw new Error('Diary not found');
+  }
+  
+  const diary = diaryDoc.data() as Diary;
+  const invitationId = `invite_${Date.now()}`;
+  
+  const invitation: Invitation = {
+    id: invitationId,
+    diaryId,
+    diaryName,
+    personId,
+    personEmail: userEmail.toLowerCase(),
+    personName: diary.people[personId]?.name || 'Guest',
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    invitedAt: new Date().toISOString(),
+    invitedBy: diary.createdBy,
+    invitedByName: Object.values(diary.people).find(p => p.userId === diary.createdBy)?.name || 'Diary Creator',
+  };
+
+  await setDoc(doc(db, 'invitations', invitationId), invitation);
+}
+
 
   private normalizeDiary(data: any): Diary {
     return {

@@ -74,132 +74,73 @@ export function ExpenseForm({ people, events, currentUser, editingExpense, onSub
     setFrozenSplits([]);
   };
 
-  const handleDividerDrag = (dividerIndex: number, startEvent: React.MouseEvent | React.TouchEvent) => {
+  const handleDividerDrag = (dividerIndex: number, startEvent: React.PointerEvent) => {
   // Prevent if too many splits are frozen
-  if (frozenSplits.length >= participants.length - 1) {
-    alert('Cannot adjust - too many splits are locked');
-    return;
-  }
+  if (frozenSplits.length >= participants.length - 1) return;
   
-  // Prevent default behavior
   startEvent.preventDefault();
   startEvent.stopPropagation();
   
-  // Get container element
   const container = document.getElementById('split-bar-container');
   if (!container) return;
   
   const containerRect = container.getBoundingClientRect();
+  const startX = startEvent.clientX;
   
-  // Get initial position from mouse or touch
-  const getClientX = (e: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent): number => {
-    if ('touches' in e) {
-      return e.touches[0]?.clientX || ('changedTouches' in e ? e.changedTouches[0]?.clientX : 0);
-    }
-    return e.clientX;
-  };
-  
-  const startX = getClientX(startEvent);
-  
-  // Get the people being adjusted
   const leftPerson = participants[dividerIndex];
   const rightPerson = participants[dividerIndex + 1];
   
-  // Check if either is frozen
-  if (frozenSplits.includes(leftPerson) || frozenSplits.includes(rightPerson)) {
-    alert(`Cannot adjust - ${people[leftPerson]?.name || leftPerson} or ${people[rightPerson]?.name || rightPerson} is locked`);
-    return;
-  }
+  if (frozenSplits.includes(leftPerson) || frozenSplits.includes(rightPerson)) return;
   
-  const initialLeftSplit = parseInt(splits[leftPerson]?.toString() || '0');
-  const initialRightSplit = parseInt(splits[rightPerson]?.toString() || '0');
-  const combinedTotal = initialLeftSplit + initialRightSplit;
+  const initialLeft = parseInt(splits[leftPerson]?.toString() || '0');
+  const initialRight = parseInt(splits[rightPerson]?.toString() || '0');
+  const total = initialLeft + initialRight;
   
-  // Add visual feedback
-  document.body.style.cursor = 'ew-resize';
-  container.style.userSelect = 'none';
+  // Set pointer capture for smooth dragging
+  (startEvent.target as HTMLElement).setPointerCapture(startEvent.pointerId);
   
-  // Throttle updates for better performance
-  let lastUpdateTime = 0;
-  const throttleDelay = 16; // ~60fps
-  
-  const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
-    const now = Date.now();
-    if (now - lastUpdateTime < throttleDelay) return;
-    lastUpdateTime = now;
-    
-    // Prevent scrolling on mobile
-    moveEvent.preventDefault();
-    
-    const currentX = getClientX(moveEvent);
-    const deltaX = currentX - startX;
+  const handleMove = (e: PointerEvent) => {
+    const deltaX = e.clientX - startX;
     const deltaPercent = (deltaX / containerRect.width) * 100;
     
-    // Calculate new splits
-    let newLeftSplit = initialLeftSplit + deltaPercent;
-    let newRightSplit = initialRightSplit - deltaPercent;
+    let newLeft = initialLeft + deltaPercent;
+    let newRight = total - newLeft;
     
-    // Apply constraints (min 5%, max based on combined total)
-    const minSplit = 5;
-    const maxLeft = combinedTotal - minSplit;
-    const maxRight = combinedTotal - minSplit;
+    // Clamp to min 5%
+    newLeft = Math.max(5, Math.min(total - 5, newLeft));
+    newRight = total - newLeft;
     
-    newLeftSplit = Math.max(minSplit, Math.min(maxLeft, newLeftSplit));
-    newRightSplit = combinedTotal - newLeftSplit;
+    // Round
+    newLeft = Math.round(newLeft);
+    newRight = Math.round(newRight);
     
-    // Round to integers
-    newLeftSplit = Math.round(newLeftSplit);
-    newRightSplit = Math.round(newRightSplit);
-    
-    // Ensure they still sum to the original combined total
-    const currentSum = newLeftSplit + newRightSplit;
-    if (currentSum !== combinedTotal) {
-      const diff = combinedTotal - currentSum;
-      // Add difference to the larger split
-      if (newLeftSplit > newRightSplit) {
-        newLeftSplit += diff;
+    // Fix rounding errors
+    const sum = newLeft + newRight;
+    if (sum !== total) {
+      if (newLeft > newRight) {
+        newLeft += (total - sum);
       } else {
-        newRightSplit += diff;
+        newRight += (total - sum);
       }
     }
     
-    // Update splits
     setSplits(prev => ({
       ...prev,
-      [leftPerson]: newLeftSplit,
-      [rightPerson]: newRightSplit
+      [leftPerson]: newLeft,
+      [rightPerson]: newRight
     }));
   };
   
-  const handleEnd = (endEvent?: MouseEvent | TouchEvent) => {
-    // Remove visual feedback
-    document.body.style.cursor = '';
-    container.style.userSelect = '';
-    
-    // Clean up all listeners
-    document.removeEventListener('mousemove', handleMove);
-    document.removeEventListener('mouseup', handleEnd);
-    document.removeEventListener('touchmove', handleMove);
-    document.removeEventListener('touchend', handleEnd);
-    document.removeEventListener('touchcancel', handleEnd);
-    
-    // Haptic feedback on mobile (if supported)
-    if (endEvent && 'touches' in endEvent && 'vibrate' in navigator) {
-      navigator.vibrate(10);
-    }
+  const handleEnd = (e: PointerEvent) => {
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    document.removeEventListener('pointermove', handleMove);
+    document.removeEventListener('pointerup', handleEnd);
+    document.removeEventListener('pointercancel', handleEnd);
   };
   
-  // Add all event listeners
-  document.addEventListener('mousemove', handleMove);
-  document.addEventListener('mouseup', handleEnd);
-  document.addEventListener('touchmove', handleMove, { passive: false });
-  document.addEventListener('touchend', handleEnd);
-  document.addEventListener('touchcancel', handleEnd);
-  
-  // Haptic feedback on drag start (mobile)
-  if ('touches' in startEvent && 'vibrate' in navigator) {
-    navigator.vibrate(10);
-  }
+  document.addEventListener('pointermove', handleMove);
+  document.addEventListener('pointerup', handleEnd);
+  document.addEventListener('pointercancel', handleEnd);
 };
 
   const handleSplitChange = (personId: string, value: string) => {

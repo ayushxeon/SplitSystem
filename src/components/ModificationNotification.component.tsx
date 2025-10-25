@@ -15,6 +15,11 @@ export function ModificationNotifications({
   onNavigate,
   onClose 
 }: ModificationNotificationsProps) {
+  // ✅ FIX 3: Sort notifications in reverse chronological order (newest first)
+  const sortedNotifications = [...notifications].sort((a, b) => 
+    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
@@ -29,11 +34,11 @@ export function ModificationNotifications({
         </div>
 
         <div className="p-6 overflow-y-auto max-h-[60vh]">
-          {notifications.length === 0 ? (
+          {sortedNotifications.length === 0 ? (
             <p className="text-gray-500 text-center py-8">No new notifications</p>
           ) : (
             <div className="space-y-4">
-              {notifications.map(notification => (
+              {sortedNotifications.map(notification => (
                 <div 
                   key={notification.id} 
                   className={`p-4 rounded-lg border ${

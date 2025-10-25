@@ -56,6 +56,14 @@ export interface Expense {
   currentVersion: number;
 }
 
+export interface JoinRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+}
 export interface Settlement {
   id: string;
   from: string;
@@ -80,6 +88,7 @@ export interface Diary {
   createdAt: string;
   updatedAt: string;
   inviteLink?: string;
+  joinRequests?: JoinRequest[];  // ✅ ADD THIS
 }
 
 export interface Invitation {
@@ -93,6 +102,7 @@ export interface Invitation {
   invitedByName: string;
   status: 'pending' | 'accepted' | 'rejected';
   createdAt: string;
+  invitedAt?: string;  // ✅ ADD THIS
 }
 
 export interface ModificationNotification {
